@@ -13,9 +13,7 @@ Send connection requests with a custom message to those extracted profiles.
 ├── logs/
 │   ├── extracted_contacts.csv    # Output file for extracted contact info
 │   ├── connection_logs.csv       # Log of sent connection requests
-│   └── error_logs.csv            # Any errors encountered during execution
-├── messages/
-│   └── message.txt               # Your connection request message text
+│   └── error_logs.csv            # Any errors encountered during execution            
 ├── utils/
 │   ├── browser.py                 # Sets up Selenium WebDriver
 │   ├── helpers.py                 # Helper functions (e.g., loading message text)
@@ -76,9 +74,9 @@ logs/extracted_contacts.csv
 2️⃣ connections.py
 Reads logs/extracted_contacts.csv for LinkedIn profile URLs
 
-Reads your custom message from:
+Reads your custom message from and also how many emails we have to fetch mention over there:
 ```
-messages/message.txt
+in config.ymal
 ```
 
 
