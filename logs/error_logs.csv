@@ -1,0 +1,5 @@
+2025-08-19 03:47:28.018575,shivapatel098k@gmail.com,Thread 1,insert_contact() got an unexpected keyword argument 'title'
+2025-08-19 03:47:28.030120,shivapatel098k@gmail.com,Thread 2,list index out of range
+2025-08-19 03:47:28.037221,shivapatel098k@gmail.com,Thread 3,list index out of range
+2025-08-19 03:47:28.043892,shivapatel098k@gmail.com,Thread 4,list index out of range
+2025-08-19 03:47:28.049997,shivapatel098k@gmail.com,Thread 5,list index out of range
