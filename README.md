@@ -1,101 +1,145 @@
-# LinkedIn Automation Bot
+🔗 LinkedIn Auto-Connect Bot
 
-### This project automates two main tasks on LinkedIn:
+An automated LinkedIn connection tool that helps you extract contacts and send personalized connection requests using multiple LinkedIn accounts and Chrome profiles.
 
-Extract contact info from the latest 10 conversations in your LinkedIn messages.
+✨ Features
+✅ Extracts contacts from LinkedIn search results
+✅ Sends personalized connection requests
+✅ Each account connects only to its own contacts
+✅ Clicks only the main Connect button (never sidebar)
+✅ Handles Connect inside the “More” dropdown
+✅ Supports multiple Chrome profiles
+✅ Session-based login (no repeated authentication)
 
-Send connection requests with a custom message to those extracted profiles.
-
-```
-.
+📁 Project Structure
+project-linkedin-extract-and-connect/
+├── setup.py                 # 1️⃣ Initial setup
+├── validate_profiles.py     # 2️⃣ Validate configuration
+├── main.py                  # 3️⃣ Extract contacts
+├── connections.py           # 4️⃣ Send connections
+├── config.py                # Auto-generated config
+├── config.yaml              # Connection messages
+├── requirements.txt         # Dependencies
 ├── credentials/
-│   └── accounts.yaml             # Stores LinkedIn account usernames & passwords
+│   └── accounts.yaml        # LinkedIn credentials
 ├── logs/
-│   ├── extracted_contacts.csv    # Output file for extracted contact info
-│   ├── connection_logs.csv       # Log of sent connection requests
-│   └── error_logs.csv            # Any errors encountered during execution            
-├── utils/
-│   ├── browser.py                 # Sets up Selenium WebDriver
-│   ├── helpers.py                 # Helper functions (e.g., loading message text)
-│   └── logger.py                  # CSV logging utilities
-├── main.py                        # Extracts contact info from latest 10 unread or recent chats
-├── connections.py                 # Sends connection requests with a custom message
-└── README.md
-```
+│   └── extracted_contacts.csv
+└── utils/
+    ├── browser.py           # Browser setup
+    ├── db.py                # Database utilities
+    ├── linkedin_bot.py      # Bot helper functions
+    ├── logger.py            # Logging configuration
+    └── helpers.py           # General helpers
 
+🚀 Installation
+1️⃣ Clone / Download Project
+cd project-linkedin-extract-and-connect
 
-### How It Works
+2️⃣ Create Virtual Environment
+python -m venv venv
 
-Both main.py and connections.py use the same credentials file to log into LinkedIn:
+3️⃣ Activate Virtual Environment
 
+ For Windows (CMD)
 
+venv\Scripts\activate
+
+Windows (PowerShell)
+
+.\venv\Scripts\Activate.ps1
+
+Mac / Linux
+
+source venv/bin/activate
+
+4️⃣ Install Dependencies
+pip install -r requirements.txt
+pip install -U selenium
+
+🔧 Configuration
+1️⃣ Chrome Profiles Setup
+
+This project uses Chrome profiles to maintain LinkedIn login sessions.
+
+Locate Chrome profiles directory:
+
+C:\Users\YOUR_USERNAME\AppData\Local\Google\Chrome\User Data
+
+Find Profile Folder Name
+
+1.Open Chrome using your profile
+2.Go to: chrome://version
+3.Check Profile Path
+
+Example:
+
+Display Name	 Folder Name
+ Account 1	       Profile 1
+ Account 2    	   Profile 2
+
+2️⃣ Configure Accounts
+Edit:
 credentials/accounts.yaml
-```
+
+Example:
+
 accounts:
-  - username: your_email@example.com
-    password: your_password
-  - username: your_email@example.com
-    password: your_password
-```
+  - username: "account1@gmail.com"
+    password: "your_password"
+    chrome_profile: "Profile 1"
+    candidate_id: 123 #id from database
+ 
+⚠️ Make sure chrome_profile matches the folder name exactly.
 
-### 📜 Script Functions
-1️⃣ main.py
-Logs into LinkedIn using credentials from accounts.yaml
+3️⃣ Configure Messages
 
-Opens Messages
+Edit:
+config.yaml
 
-Extracts the latest 10 conversations (including unread)
+Example:
 
-Visits each sender's profile
+MESSAGE: "Hi! I'd love to connect with you."
 
-Scrapes:
+# Optional per-account messages
+account1@gmail.com: "Custom message for account 1"
+account2@gmail.com: "Custom message for account 2"
 
-Name
+4️⃣ Manual Login (Required)
+Before running the bot, you must log in once manually.
+For each account:
+open Chrome with its profile
+Log in to LinkedIn
+Close Chrome fully
+This saves session cookies for automation.
 
-Title
+📖 Usage
+Activate Environment
+venv\Scripts\activate
 
-Location
+Run Scripts in Order
+python setup.py             # 1️⃣ Generate config
+python validate_profiles.py # 2️⃣ Validate setup
+python main.py              # 3️⃣ Extract contacts
+python connections.py       # 4️⃣ Send requests
 
-Pronouns
+📂 Output & Logs
+Extracted Contacts
 
-Connection level
-
-Profile URL
-
-Contact info (if available)
-
-Saves all results to: 
-```
+Saved to:
 logs/extracted_contacts.csv
 
-```
+Logging
+Runtime logs
+Errors
+Connection status
+All stored in:
+/logs
 
+⚙️ How It Works
 
-2️⃣ connections.py
-Reads logs/extracted_contacts.csv for LinkedIn profile URLs
-
-Reads your custom message from and also how many emails we have to fetch mention over there:
-```
-in config.ymal
-```
-
-
-
-▶️ How to Run
-1. Install dependencies:
-
-```
-pip install -r requirements.txt
-```
-2. Run extraction (scrapes contact info from latest 10 chats):
-```
-python main.py
-```
-➡ Output saved in logs/extracted_contacts.csv
-
-3. Send connection requests:
-
-```
-python connections.py
-```
-➡ Logs saved in logs/connection_logs.csv
+1️⃣ Loads Chrome profiles
+2️⃣ Uses stored LinkedIn sessions
+3️⃣ Scrapes search/contact results
+4️⃣ Assigns contacts per account
+5️⃣ Sends personalized requests
+6️⃣ Tracks progress via database

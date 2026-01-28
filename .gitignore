@@ -1,4 +1,9 @@
 venv/
-credentials/*accounts.yaml
-config.yaml
-
+config.py
+marketing_candidates.csv
+__pycache__/
+*.pyc
+logs/
+*.log
+debug_*.png
+.venv/

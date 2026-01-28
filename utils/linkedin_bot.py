@@ -1,1033 +1,610 @@
-
-
-
-
-
-
-
-
-
-
-# # # import time
-# # # from datetime import datetime
-# # # from selenium.webdriver.common.by import By
-# # # from selenium.webdriver.support import expected_conditions as EC
-# # # from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException, TimeoutException
-# # # from utils.helpers import load_message
-# # # from utils.logger import log_csv
-# # # from utils.browser import setup_browser
-# # # from config import NUM_MESSAGES_TO_PROCESS
-
-# # # class LinkedInBot:
-# # #     def __init__(self, username, password):
-# # #         self.username = username
-# # #         self.password = password
-# # #         self.message = load_message("messages/message.txt")
-# # #         self.driver, self.wait = setup_browser()
-# # #         self.main_window = None
-
-# # #     def login(self):
-# # #         self.driver.get("https://www.linkedin.com/login")
-# # #         self.wait.until(EC.presence_of_element_located((By.ID, 'username'))).send_keys(self.username)
-# # #         self.driver.find_element(By.ID, 'password').send_keys(self.password)
-# # #         self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-# # #         self.wait.until(EC.url_contains("feed"))
-# # #         print(f"✅ Logged in: {self.username}")
-# # #         time.sleep(3)
-
-# # #     def go_to_messages(self):
-# # #         self.driver.get("https://www.linkedin.com/messaging/")
-# # #         time.sleep(10)
-# # #         self.main_window = self.driver.current_window_handle
-# # #         return
-
-# # #     def _scroll_to_top_of_chat(self):
-# # #         """Scroll to the top of the current chat conversation"""
-# # #         try:
-# # #             # First wait for the message list to be present
-# # #             message_list = self.wait.until(EC.presence_of_element_located(
-# # #                 (By.CSS_SELECTOR, "div.msg-s-message-list.full-width.scrollable")
-# # #             ))
-            
-# # #             # Scroll to top with smooth behavior
-# # #             self.driver.execute_script("""
-# # #                 arguments[0].scrollTo({
-# # #                     top: 0,
-# # #                     behavior: 'smooth'
-# # #                 });
-# # #             """, message_list)
-            
-# # #             # Wait for scroll to complete
-# # #             time.sleep(2)
-            
-# # #             # Additional check to ensure we're at the top
-# # #             scroll_position = self.driver.execute_script("return arguments[0].scrollTop", message_list)
-# # #             if scroll_position > 100:  # If not at top, try again
-# # #                 self.driver.execute_script("arguments[0].scrollTop = 0;", message_list)
-# # #                 time.sleep(1)
-            
-# # #             return True
-# # #         except Exception as e:
-# # #             print(f"⚠️ Error scrolling chat: {e}")
-# # #             return False
-
-# # #     def extract_recent_contacts(self):
-# # #         contacts = []
-# # #         try:
-# # #             # Get all conversation threads
-# # #             threads = self.wait.until(EC.presence_of_all_elements_located(
-# # #                 (By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]")
-# # #             ))
-
-# # #             if NUM_MESSAGES_TO_PROCESS == "all":
-# # #                 print(f"Found {len(threads)} total threads. Processing all...")
-# # #                 threads_to_process = threads
-# # #             else:
-# # #                 print(f"Found {len(threads)} total threads. Processing last {NUM_MESSAGES_TO_PROCESS}...")
-# # #                 threads_to_process = threads[:NUM_MESSAGES_TO_PROCESS]
-
-# # #             for i, thread in enumerate(threads_to_process, start=1):
-# # #                 try:
-# # #                     print(f"📨 Opening thread {i} of {len(threads_to_process)}...")
-                    
-# # #                     # Re-find thread to avoid staleness
-# # #                     current_threads = self.driver.find_elements(
-# # #                         By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-# # #                     )
-# # #                     if i-1 < len(current_threads):
-# # #                         thread = current_threads[i-1]
-                    
-# # #                     # Scroll to and click the thread
-# # #                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", thread)
-# # #                     thread.click()
-# # #                     time.sleep(3)  # Wait for click to register
-                    
-# # #                     # Wait for chat container to load
-# # #                     self.wait.until(EC.presence_of_element_located(
-# # #                         (By.CSS_SELECTOR, "div.msg-s-message-list-container")
-# # #                     ))
-                    
-# # #                     # Scroll to top of chat - this is the critical fix
-# # #                     if not self._scroll_to_top_of_chat():
-# # #                         print("⚠️ Retrying scroll...")
-# # #                         time.sleep(2)
-# # #                         self._scroll_to_top_of_chat()
-                    
-# # #                     # Wait for profile card to load
-# # #                     profile_card = self.wait.until(EC.visibility_of_element_located(
-# # #                         (By.CSS_SELECTOR, "div.msg-s-profile-card.msg-s-profile-card-one-to-one.ph3")
-# # #                     ))
-                    
-# # #                     # Scroll profile card into view
-# # #                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", profile_card)
-# # #                     time.sleep(2)
-
-# # #                     # Rest of your profile extraction logic remains exactly the same...
-# # #                     profile_block = self.wait.until(EC.visibility_of_element_located(
-# # #                         (By.CSS_SELECTOR, "div.artdeco-entity-lockup__title.ember-view")
-# # #                     ))
-# # #                     name_link = profile_block.find_element(By.CSS_SELECTOR, "a")
-# # #                     profile_url = name_link.get_attribute("href")
-
-# # #                     # Open profile in new tab
-# # #                     self.driver.execute_script("window.open(arguments[0]);", profile_url)
-# # #                     time.sleep(3)
-# # #                     self.driver.switch_to.window(self.driver.window_handles[-1])
-
-# # #                     # Extract profile details
-# # #                     full_name = self._safe_get_text("h1.text-heading-xlarge")
-# # #                     title = self._safe_get_text("div.text-body-medium.break-words")
-# # #                     location = self._safe_get_text("span.text-body-small.inline.t-black--light.break-words")
-# # #                     pronouns = self._safe_get_text("span.text-body-small")
-# # #                     connection = self._safe_get_text("span.dist-value")
-
-# # #                     contact_info = ""
-# # #                     try:
-# # #                         contact_button = self.driver.find_element(By.CSS_SELECTOR, "a[href*='overlay/contact-info']")
-# # #                         self.driver.execute_script("arguments[0].click();", contact_button)
-# # #                         time.sleep(2)
-# # #                         try:
-# # #                             modal_section = self.wait.until(EC.presence_of_element_located(
-# # #                                 (By.CSS_SELECTOR, "section.pv-contact-info")
-# # #                             ))
-# # #                             contact_info = modal_section.text.strip()
-# # #                         except Exception:
-# # #                             try:
-# # #                                 modal_section = self.driver.find_element(By.CSS_SELECTOR, "section.pv-contact-info__contact-type")
-# # #                                 contact_info = modal_section.text.strip()
-# # #                             except Exception:
-# # #                                 contact_info = ""
-# # #                         try:
-# # #                             close_btn = self.driver.find_element(By.CSS_SELECTOR, "button.artdeco-modal__dismiss")
-# # #                             self.driver.execute_script("arguments[0].click();", close_btn)
-# # #                             time.sleep(1)
-# # #                         except Exception:
-# # #                             pass
-# # #                     except Exception as ci_err:
-# # #                         print(f"⚠️ No contact info found for {full_name}: {ci_err}")
-
-# # #                     # Log details
-# # #                     log_csv("logs/extracted_contacts.csv",
-# # #                             [datetime.now(), self.username, full_name, title, location, pronouns, connection, profile_url, contact_info])
-# # #                     print(f"✅ Extracted {full_name}")
-# # #                     contacts.append((full_name, title))
-
-# # #                     # Close profile tab and return to messages
-# # #                     self.driver.close()
-# # #                     self.driver.switch_to.window(self.main_window)
-# # #                     self.wait.until(EC.presence_of_element_located(
-# # #                         (By.CSS_SELECTOR, "div.msg-conversations-container__convo-item-link")
-# # #                     ))
-# # #                     time.sleep(2)
-
-# # #                 except Exception as e:
-# # #                     print(f"⚠️ Error reading thread {i}: {e}")
-# # #                     log_csv("logs/error_logs.csv", [datetime.now(), self.username, f"Thread {i}", str(e)])
-# # #                     try:
-# # #                         if len(self.driver.window_handles) > 1:
-# # #                             self.driver.close()
-# # #                         self.driver.switch_to.window(self.main_window)
-# # #                         self.wait.until(EC.presence_of_element_located(
-# # #                             (By.CSS_SELECTOR, "div.msg-conversations-container__convo-item-link")
-# # #                         ))
-# # #                     except Exception:
-# # #                         pass
-# # #                     continue
-# # #         except Exception as e:
-# # #             print(f"⚠️ Error in extract_recent_contacts: {e}")
-# # #             log_csv("logs/error_logs.csv", [datetime.now(), self.username, "extract_recent_contacts", str(e)])
-# # #         return contacts
-
-# # #     def _safe_get_text(self, selector):
-# # #         try:
-# # #             return self.driver.find_element(By.CSS_SELECTOR, selector).text.strip()
-# # #         except:
-# # #             return ""
-
-# # #     def run(self):
-# # #         try:
-# # #             self.login()
-# # #             self.go_to_messages()
-# # #             self.extract_recent_contacts()
-# # #         except Exception as e:
-# # #             print(f"Error in {self.username}: {str(e)}")
-# # #         finally:
-# # #             self.driver.quit()
-
-
-
-# # import time
-# # from datetime import datetime
-# # from selenium.webdriver.common.by import By
-# # from selenium.webdriver.support import expected_conditions as EC
-# # from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException, TimeoutException
-# # from utils.helpers import load_message
-# # from utils.logger import log_csv
-# # from utils.browser import setup_browser
-# # import yaml
-# # import os
-
-# # # Load values from config.yaml
-# # CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-# # with open(CONFIG_PATH, "r") as f:
-# #     config_data = yaml.safe_load(f)
-
-# # NUM_MESSAGES_TO_PROCESS = config_data.get("NUM_MESSAGES_TO_PROCESS", "all")
-
-# # class LinkedInBot:
-# #     def __init__(self, username, password):
-# #         self.username = username
-# #         self.password = password
-# #         self.driver, self.wait = setup_browser()
-# #         self.main_window = None
-
-# #     def login(self):
-# #         self.driver.get("https://www.linkedin.com/login")
-# #         self.wait.until(EC.presence_of_element_located((By.ID, 'username'))).send_keys(self.username)
-# #         self.driver.find_element(By.ID, 'password').send_keys(self.password)
-# #         self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-# #         self.wait.until(EC.url_contains("feed"))
-# #         print(f"✅ Logged in: {self.username}")
-# #         time.sleep(3)
-
-# #     def go_to_messages(self):
-# #         self.driver.get("https://www.linkedin.com/messaging/")
-# #         time.sleep(5)
-# #         self.main_window = self.driver.current_window_handle
-# #         self._scroll_to_load_all_threads()
-# #         return
-
-# #     def _scroll_to_load_all_threads(self):
-# #         threads_locator = "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-# #         last_count = 0
-# #         while True:
-# #             threads = self.wait.until(
-# #                 EC.presence_of_all_elements_located((By.XPATH, threads_locator))
-# #             )
-# #             if len(threads) > last_count:
-# #                 last_count = len(threads)
-# #                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'end'});", threads[-1])
-# #                 time.sleep(1.5)
-# #             else:
-# #                 break
-# #         print(f"Found {last_count} total threads. Processing...")
-
-# #     def extract_recent_contacts(self):
-# #         contacts = []
-# #         threads_locator = "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-
-# #         all_threads = self.wait.until(
-# #             EC.presence_of_all_elements_located((By.XPATH, threads_locator))
-# #         )
-
-# #         total_threads = len(all_threads)
-# #         if NUM_MESSAGES_TO_PROCESS != "all":
-# #             total_threads = min(total_threads, int(NUM_MESSAGES_TO_PROCESS))
-
-# #         for i in range(total_threads):
-# #             try:
-# #                 print(f"📨 Opening thread {i+1} of {total_threads}...")
-
-# #                 current_threads = self.wait.until(
-# #                     EC.presence_of_all_elements_located((By.XPATH, threads_locator))
-# #                 )
-
-# #                 if i >= len(current_threads):
-# #                     print(f"⚠️ Thread index {i} not found, skipping...")
-# #                     continue
-
-# #                 thread = current_threads[i]
-# #                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", thread)
-# #                 thread.click()
-# #                 time.sleep(2)
-
-# #                 self.wait.until(EC.presence_of_element_located(
-# #                     (By.CSS_SELECTOR, "div.msg-s-message-list-container")
-# #                 ))
-
-# #                 try:
-# #                     sender_element = self.wait.until(EC.element_to_be_clickable(
-# #                         (By.CSS_SELECTOR, "dt.msg-entity-lockup__entity-title-wrapper h2.msg-entity-lockup__entity-title a")
-# #                     ))
-
-# #                     # Open sender in a new tab
-# #                     profile_url = sender_element.get_attribute("href")
-# #                     self.driver.execute_script("window.open(arguments[0]);", profile_url)
-
-# #                     # Switch to new tab
-# #                     self.driver.switch_to.window(self.driver.window_handles[-1])
-
-# #                     time.sleep(3)
-
-# #                     full_name = self._safe_get_text("h1.text-heading-xlarge")
-# #                     title = self._safe_get_text("div.text-body-medium.break-words")
-# #                     location = self._safe_get_text("span.text-body-small.inline.t-black--light.break-words")
-# #                     pronouns = self._safe_get_text("span.text-body-small")
-# #                     connection = self._safe_get_text("span.dist-value")
-
-# #                     contact_info = ""
-# #                     try:
-# #                         contact_button = self.driver.find_element(By.CSS_SELECTOR, "a[href*='overlay/contact-info']")
-# #                         self.driver.execute_script("arguments[0].click();", contact_button)
-# #                         time.sleep(2)
-# #                         try:
-# #                             modal_section = self.wait.until(EC.presence_of_element_located(
-# #                                 (By.CSS_SELECTOR, "section.pv-contact-info")
-# #                             ))
-# #                             contact_info = modal_section.text.strip()
-# #                         except:
-# #                             try:
-# #                                 modal_section = self.driver.find_element(By.CSS_SELECTOR, "section.pv-contact-info__contact-type")
-# #                                 contact_info = modal_section.text.strip()
-# #                             except:
-# #                                 contact_info = ""
-# #                         try:
-# #                             close_btn = self.driver.find_element(By.CSS_SELECTOR, "button.artdeco-modal__dismiss")
-# #                             self.driver.execute_script("arguments[0].click();", close_btn)
-# #                             time.sleep(1)
-# #                         except:
-# #                             pass
-# #                     except:
-# #                         print(f"⚠️ No contact info found for {full_name}")
-
-# #                     log_csv("logs/extracted_contacts.csv",
-# #                             [datetime.now(), self.username, full_name, title, location, pronouns, connection, self.driver.current_url, contact_info])
-# #                     print(f"✅ Extracted {full_name}")
-# #                     contacts.append((full_name, title))
-
-# #                     # Close the new tab and return to messaging list
-# #                     self.driver.close()
-# #                     self.driver.switch_to.window(self.main_window)
-
-# #                 except Exception as e:
-# #                     print(f"⚠️ Could not open sender's profile: {e}")
-# #                     continue
-
-# #             except Exception as e:
-# #                 print(f"⚠️ Error reading thread {i+1}: {e}")
-# #                 log_csv("logs/error_logs.csv", [datetime.now(), self.username, f"Thread {i+1}", str(e)])
-# #                 continue
-
-# #         return contacts
-
-# #     def _safe_get_text(self, selector):
-# #         try:
-# #             return self.driver.find_element(By.CSS_SELECTOR, selector).text.strip()
-# #         except:
-# #             return ""
-
-# #     def run(self):
-# #         try:
-# #             self.login()
-# #             self.go_to_messages()
-# #             self.extract_recent_contacts()
-# #         except Exception as e:
-# #             print(f"Error in {self.username}: {str(e)}")
-# #         finally:
-# #             self.driver.quit()
-
-
-
-
-
-
-# import time
-# from datetime import datetime
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver.support import expected_conditions as EC
-# from selenium.common.exceptions import TimeoutException
-# from utils.logger import log_csv
-# from utils.browser import setup_browser
-# import yaml
-# import os
-
-# # Load config
-# CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-# abs_config_path = os.path.abspath(CONFIG_PATH)
-
-# print("Looking for config at:", abs_config_path)
-
-# # Load config or use defaults if not found
-# try:
-#     with open(abs_config_path, "r", encoding="utf-8") as f:
-#         config_data = yaml.safe_load(f) or {}
-# except FileNotFoundError:
-#     print(f"Warning: config.yaml not found at {abs_config_path}. Using defaults.")
-#     config_data = {}
-
-
-# NUM_MESSAGES_TO_PROCESS = config_data.get("NUM_MESSAGES_TO_PROCESS", "all")
-
-# class LinkedInBot:
-#     def __init__(self, username, password):
-#         self.username = username
-#         self.password = password
-#         self.driver, self.wait = setup_browser()
-#         self.main_window = None
-
-#     def login(self):
-#         self.driver.get("https://www.linkedin.com/login")
-#         self.wait.until(EC.presence_of_element_located((By.ID, 'username'))).send_keys(self.username)
-#         self.driver.find_element(By.ID, 'password').send_keys(self.password)
-#         self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-#         self.wait.until(EC.url_contains("feed"))
-#         print(f"✅ Logged in: {self.username}")
-#         time.sleep(3)
-
-#     def go_to_messages(self):
-#         self.driver.get("https://www.linkedin.com/messaging/")
-#         time.sleep(5)
-#         self.main_window = self.driver.current_window_handle
-#         self._scroll_to_load_threads()
-
-#     def _scroll_to_load_threads(self):
-#         """Scroll until all or required number of threads are loaded."""
-#         last_height = self.driver.execute_script(
-#             "return document.querySelector('.msg-conversations-container__conversations-list').scrollHeight"
-#         )
-#         loaded_threads = 0
-#         while True:
-#             threads = self.driver.find_elements(
-#                 By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-#             )
-#             loaded_threads = len(threads)
-
-#             if NUM_MESSAGES_TO_PROCESS != "all" and loaded_threads >= int(NUM_MESSAGES_TO_PROCESS):
-#                 break
-
-#             self.driver.execute_script(
-#                 "document.querySelector('.msg-conversations-container__conversations-list').scrollTo(0, arguments[0]);",
-#                 last_height
-#             )
-#             time.sleep(2)
-#             new_height = self.driver.execute_script(
-#                 "return document.querySelector('.msg-conversations-container__conversations-list').scrollHeight"
-#             )
-#             if new_height == last_height:  # no more threads to load
-#                 break
-#             last_height = new_height
-
-#         print(f"📜 Found {loaded_threads} total threads. Processing...")
-
-#     def extract_recent_contacts(self):
-#         contacts = []
-#         try:
-#             threads_locator = "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-#             all_threads = self.driver.find_elements(By.XPATH, threads_locator)
-
-#             total_threads = len(all_threads)
-#             if NUM_MESSAGES_TO_PROCESS != "all":
-#                 total_threads = min(total_threads, int(NUM_MESSAGES_TO_PROCESS))
-
-#             for i in range(total_threads):
-#                 try:
-#                     print(f"📨 Opening thread {i+1} of {total_threads}...")
-#                     current_threads = self.driver.find_elements(By.XPATH, threads_locator)
-#                     thread = current_threads[i]
-#                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", thread)
-#                     thread.click()
-#                     time.sleep(2)
-
-#                     # Get profile link if available
-#                     try:
-#                         profile_link_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/in/']")
-#                         profile_url = profile_link_el.get_attribute("href")
-#                     except:
-#                         print("⚠️ No profile link found (group/system/archived). Skipping...")
-#                         continue
-
-#                     # Open profile in a new tab
-#                     self.driver.execute_script("window.open(arguments[0]);", profile_url)
-#                     self.driver.switch_to.window(self.driver.window_handles[-1])
-#                     time.sleep(3)
-
-#                     # Extract profile details
-#                     full_name = self._safe_get_text("h1.text-heading-xlarge")
-#                     title = self._safe_get_text("div.text-body-medium.break-words")
-#                     location = self._safe_get_text("span.text-body-small.inline.t-black--light.break-words")
-#                     pronouns = self._safe_get_text("span.text-body-small")
-#                     connection = self._safe_get_text("span.dist-value")
-
-#                     contact_info = ""
-#                     try:
-#                         contact_button = self.driver.find_element(By.CSS_SELECTOR, "a[href*='overlay/contact-info']")
-#                         self.driver.execute_script("arguments[0].click();", contact_button)
-#                         time.sleep(2)
-#                         try:
-#                             modal_section = self.wait.until(
-#                                 EC.presence_of_element_located((By.CSS_SELECTOR, "section.pv-contact-info"))
-#                             )
-#                             contact_info = modal_section.text.strip()
-#                         except:
-#                             pass
-#                         try:
-#                             close_btn = self.driver.find_element(By.CSS_SELECTOR, "button.artdeco-modal__dismiss")
-#                             self.driver.execute_script("arguments[0].click();", close_btn)
-#                         except:
-#                             pass
-#                     except:
-#                         pass
-
-#                     # Log extracted data
-#                     log_csv(
-#                         "logs/extracted_contacts.csv",
-#                         [datetime.now(), self.username, full_name, title, location, pronouns, connection, profile_url, contact_info]
-#                     )
-#                     print(f"✅ Extracted {full_name}")
-#                     contacts.append((full_name, title))
-
-#                     # Close profile tab and return to main tab
-#                     self.driver.close()
-#                     self.driver.switch_to.window(self.main_window)
-#                     time.sleep(1)
-
-#                 except Exception as e:
-#                     print(f"⚠️ Error reading thread {i+1}: {e}")
-#                     log_csv("logs/error_logs.csv", [datetime.now(), self.username, f"Thread {i+1}", str(e)])
-#                     continue
-
-#         except Exception as e:
-#             print(f"⚠️ Error in extract_recent_contacts: {e}")
-#             log_csv("logs/error_logs.csv", [datetime.now(), self.username, "extract_recent_contacts", str(e)])
-#         return contacts
-
-#     def _safe_get_text(self, selector):
-#         try:
-#             return self.driver.find_element(By.CSS_SELECTOR, selector).text.strip()
-#         except:
-#             return ""
-
-#     def run(self):
-#         try:
-#             self.login()
-#             self.go_to_messages()
-#             self.extract_recent_contacts()
-#         except Exception as e:
-#             print(f"Error in {self.username}: {str(e)}")
-#         finally:
-#             self.driver.quit()
-
-
-
-
-
-
-# import time
-# from datetime import datetime
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver.support import expected_conditions as EC
-# from selenium.common.exceptions import TimeoutException
-# from utils.logger import log_csv
-# from utils.browser import setup_browser
-# from utils.db import insert_contact   # ⬅️ Added this line
-# import yaml
-# import os
-
-# # Load config
-# CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-# abs_config_path = os.path.abspath(CONFIG_PATH)
-
-# print("Looking for config at:", abs_config_path)
-
-# # Load config or use defaults if not found
-# try:
-#     with open(abs_config_path, "r", encoding="utf-8") as f:
-#         config_data = yaml.safe_load(f) or {}
-# except FileNotFoundError:
-#     print(f"Warning: config.yaml not found at {abs_config_path}. Using defaults.")
-#     config_data = {}
-
-
-# NUM_MESSAGES_TO_PROCESS = config_data.get("NUM_MESSAGES_TO_PROCESS", "all")
-
-# class LinkedInBot:
-#     def __init__(self, username, password):
-#         self.username = username
-#         self.password = password
-#         self.driver, self.wait = setup_browser()
-#         self.main_window = None
-
-#     def login(self):
-#         self.driver.get("https://www.linkedin.com/login")
-#         self.wait.until(EC.presence_of_element_located((By.ID, 'username'))).send_keys(self.username)
-#         self.driver.find_element(By.ID, 'password').send_keys(self.password)
-#         self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-#         self.wait.until(EC.url_contains("feed"))
-#         print(f"✅ Logged in: {self.username}")
-#         time.sleep(3)
-
-#     def go_to_messages(self):
-#         self.driver.get("https://www.linkedin.com/messaging/")
-#         time.sleep(5)
-#         self.main_window = self.driver.current_window_handle
-#         self._scroll_to_load_threads()
-
-#     def _scroll_to_load_threads(self):
-#         """Scroll until all or required number of threads are loaded."""
-#         last_height = self.driver.execute_script(
-#             "return document.querySelector('.msg-conversations-container__conversations-list').scrollHeight"
-#         )
-#         loaded_threads = 0
-#         while True:
-#             threads = self.driver.find_elements(
-#                 By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-#             )
-#             loaded_threads = len(threads)
-
-#             if NUM_MESSAGES_TO_PROCESS != "all" and loaded_threads >= int(NUM_MESSAGES_TO_PROCESS):
-#                 break
-
-#             self.driver.execute_script(
-#                 "document.querySelector('.msg-conversations-container__conversations-list').scrollTo(0, arguments[0]);",
-#                 last_height
-#             )
-#             time.sleep(2)
-#             new_height = self.driver.execute_script(
-#                 "return document.querySelector('.msg-conversations-container__conversations-list').scrollHeight"
-#             )
-#             if new_height == last_height:  # no more threads to load
-#                 break
-#             last_height = new_height
-
-#         print(f"📜 Found {loaded_threads} total threads. Processing...")
-
-#     def extract_recent_contacts(self):
-#         contacts = []
-#         try:
-#             threads_locator = "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-#             all_threads = self.driver.find_elements(By.XPATH, threads_locator)
-
-#             total_threads = len(all_threads)
-#             if NUM_MESSAGES_TO_PROCESS != "all":
-#                 total_threads = min(total_threads, int(NUM_MESSAGES_TO_PROCESS))
-
-#             for i in range(total_threads):
-#                 try:
-#                     print(f"📨 Opening thread {i+1} of {total_threads}...")
-#                     current_threads = self.driver.find_elements(By.XPATH, threads_locator)
-#                     thread = current_threads[i]
-#                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", thread)
-#                     thread.click()
-#                     time.sleep(2)
-
-#                     # Get profile link if available
-#                     try:
-#                         profile_link_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/in/']")
-#                         profile_url = profile_link_el.get_attribute("href")
-#                     except:
-#                         print("⚠️ No profile link found (group/system/archived). Skipping...")
-#                         continue
-
-#                     # Open profile in a new tab
-#                     self.driver.execute_script("window.open(arguments[0]);", profile_url)
-#                     self.driver.switch_to.window(self.driver.window_handles[-1])
-#                     time.sleep(3)
-
-#                     # Extract profile details
-#                     full_name = self._safe_get_text("h1.text-heading-xlarge")
-#                     title = self._safe_get_text("div.text-body-medium.break-words")
-#                     location = self._safe_get_text("span.text-body-small.inline.t-black--light.break-words")
-#                     pronouns = self._safe_get_text("span.text-body-small")
-#                     connection = self._safe_get_text("span.dist-value")
-
-#                     contact_info = ""
-#                     try:
-#                         contact_button = self.driver.find_element(By.CSS_SELECTOR, "a[href*='overlay/contact-info']")
-#                         self.driver.execute_script("arguments[0].click();", contact_button)
-#                         time.sleep(2)
-#                         try:
-#                             modal_section = self.wait.until(
-#                                 EC.presence_of_element_located((By.CSS_SELECTOR, "section.pv-contact-info"))
-#                             )
-#                             contact_info = modal_section.text.strip()
-#                         except:
-#                             pass
-#                         try:
-#                             close_btn = self.driver.find_element(By.CSS_SELECTOR, "button.artdeco-modal__dismiss")
-#                             self.driver.execute_script("arguments[0].click();", close_btn)
-#                         except:
-#                             pass
-#                     except:
-#                         pass
-
-#                     # Log extracted data (CSV)
-#                     log_csv(
-#                         "logs/extracted_contacts.csv",
-#                         [
-#                             datetime.now(),
-#                             self.username,
-#                             full_name,
-#                             title,
-#                             location,
-#                             pronouns,
-#                             connection,
-#                             profile_url,
-#                             contact_info
-#                         ]
-#                     )
-
-#                     # Also save to DB
-#                     linkedin_id = profile_url.rstrip("/").split("/")[-1]
-
-#                     insert_contact(
-#                         full_name if full_name else None,
-#                         self.username,          # treating logged-in user as "source_email"
-#                         None,                   # extracted email (if available, replace None)
-#                         None,                   # extracted phone (if available, replace None)
-#                         linkedin_id,
-#                         title if title else None,
-#                         location if location else None
-#                     )
-
-#                     print(f"✅ Extracted + Saved {full_name} to DB")
-#                     contacts.append((full_name, title))
-
-#                     # Close profile tab and return to main tab
-#                     self.driver.close()
-#                     self.driver.switch_to.window(self.main_window)
-#                     time.sleep(1)
-
-#                 except Exception as e:
-#                     print(f"⚠️ Error reading thread {i+1}: {e}")
-#                     log_csv("logs/error_logs.csv", [datetime.now(), self.username, f"Thread {i+1}", str(e)])
-#                     continue
-
-#         except Exception as e:
-#             print(f"⚠️ Error in extract_recent_contacts: {e}")
-#             log_csv("logs/error_logs.csv", [datetime.now(), self.username, "extract_recent_contacts", str(e)])
-#         return contacts
-
-#     def _safe_get_text(self, selector):
-#         try:
-#             return self.driver.find_element(By.CSS_SELECTOR, selector).text.strip()
-#         except:
-#             return ""
-
-#     def run(self):
-#         try:
-#             self.login()
-#             self.go_to_messages()
-#             self.extract_recent_contacts()
-#         except Exception as e:
-#             print(f"Error in {self.username}: {str(e)}")
-#         finally:
-#             self.driver.quit()
-
-
-
-
-
-
-
-
-
-
-
-
-
+# utils/linkedin_bot.py
+# ============================================
+# LINKEDIN CONTACT EXTRACTION BOT
+# WITH FULL DEBUG LOGGING
+# ============================================
 
 import time
+import random
 from datetime import datetime
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from utils.logger import log_csv
 from utils.browser import setup_browser
-from utils.db import insert_contact
+from utils.db import insert_contact, log_extraction_activity
 import yaml
 import os
+import logging
 
-# Load config
+logger = logging.getLogger(__name__)
+
+# Load config.yaml
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "config.yaml")
-abs_config_path = os.path.abspath(CONFIG_PATH)
 
-print("Looking for config at:", abs_config_path)
-
-# Load config or use defaults if not found
 try:
-    with open(abs_config_path, "r", encoding="utf-8") as f:
+    with open(os.path.abspath(CONFIG_PATH), "r", encoding="utf-8") as f:
         config_data = yaml.safe_load(f) or {}
+    logger.info(f"Loaded config.yaml: {config_data}")
 except FileNotFoundError:
-    print(f"Warning: config.yaml not found at {abs_config_path}. Using defaults.")
-    config_data = {}
-
-# Load config or use defaults if not found
-try:
-    with open(abs_config_path, "r", encoding="utf-8") as f:
-        config_data = yaml.safe_load(f) or {}
-except FileNotFoundError:
-    print(f"Warning: config.yaml not found at {abs_config_path}. Using defaults.")
+    logger.warning("config.yaml not found, using defaults")
     config_data = {}
 
 NUM_MESSAGES_TO_PROCESS = config_data.get("NUM_MESSAGES_TO_PROCESS", "all")
 
+
 class LinkedInBot:
-    def __init__(self, username, password):
+    """LinkedIn Contact Extraction Bot with Full Debug Logging."""
+    
+    def __init__(self, username, password, chrome_profile, employee_id, candidate_id):
         self.username = username
         self.password = password
-        self.driver, self.wait = setup_browser()
+        self.chrome_profile = chrome_profile
+        self.employee_id = employee_id
+        self.candidate_id = candidate_id
+        self.driver = None
+        self.wait = None
         self.main_window = None
+        self.num_messages = NUM_MESSAGES_TO_PROCESS
+        self.extracted_count = 0
+        
+        logger.info("=" * 60)
+        logger.info("LinkedInBot initialized")
+        logger.info(f"   Username: {username}")
+        logger.info(f"   Chrome Profile: {chrome_profile}")
+        logger.info(f"   Employee ID: {employee_id}")
+        logger.info(f"   Candidate ID: {candidate_id}")
+        logger.info(f"   Messages to process: {self.num_messages}")
+        logger.info("=" * 60)
+
+    def start_browser(self):
+        """Start browser with profile."""
+        logger.info("[START_BROWSER] Starting...")
+        self.driver, self.wait = setup_browser(self.chrome_profile)
+        logger.info(f"[START_BROWSER] Browser started: {self.chrome_profile}")
 
     def login(self):
-        self.driver.get("https://www.linkedin.com/login")
-        self.wait.until(EC.presence_of_element_located((By.ID, 'username'))).send_keys(self.username)
-        self.driver.find_element(By.ID, 'password').send_keys(self.password)
-        self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
-        self.wait.until(EC.url_contains("feed"))
-        print(f"✅ Logged in: {self.username}")
-        time.sleep(3)
+        """Login to LinkedIn or verify session."""
+        try:
+            logger.info(f"[LOGIN] Checking login for {self.username}...")
+            
+            self.driver.get("https://www.linkedin.com/feed/")
+            time.sleep(5)
+            
+            # Check if logged in
+            is_logged_in = False
+            try:
+                current_url = self.driver.current_url
+                logger.info(f"[LOGIN] Current URL: {current_url}")
+                
+                if "feed" in current_url and "login" not in current_url:
+                    self.driver.find_element(By.ID, "global-nav")
+                    is_logged_in = True
+                    logger.info("[LOGIN] Found global-nav - user is logged in")
+            except Exception as e:
+                logger.debug(f"[LOGIN] Check failed: {e}")
+
+            if is_logged_in:
+                logger.info("[LOGIN] Already logged in (persistent session)")
+                return
+            
+            # Login required
+            logger.info("[LOGIN] Not logged in, performing login...")
+            
+            try:
+                self.driver.find_element(By.ID, "username")
+                logger.info("[LOGIN] Found username field on current page")
+            except:
+                logger.info("[LOGIN] Navigating to login page...")
+                self.driver.get("https://www.linkedin.com/login")
+                time.sleep(2)
+            
+            # Fill credentials
+            logger.info("[LOGIN] Filling credentials...")
+            username_field = self.wait.until(EC.presence_of_element_located((By.ID, 'username')))
+            username_field.clear()
+            username_field.send_keys(self.username)
+            
+            password_field = self.driver.find_element(By.ID, 'password')
+            password_field.clear()
+            password_field.send_keys(self.password)
+            
+            logger.info("[LOGIN] Clicking submit...")
+            self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
+            
+            # Wait for login
+            for i in range(30):
+                current_url = self.driver.current_url
+                logger.debug(f"[LOGIN] Waiting... URL: {current_url}")
+                
+                if "feed" in current_url and "login" not in current_url:
+                    logger.info("[LOGIN] Login successful")
+                    break
+                    
+                if "challenge" in current_url or "checkpoint" in current_url:
+                    logger.warning("[LOGIN] VERIFICATION REQUIRED - complete manually")
+                    while "feed" not in self.driver.current_url:
+                        time.sleep(5)
+                    break
+                    
+                time.sleep(2)
+
+            time.sleep(random.uniform(3, 5))
+                
+        except Exception as e:
+            logger.error(f"[LOGIN] Failed: {e}", exc_info=True)
+            self.driver.save_screenshot('debug_login.png')
+            raise
 
     def go_to_messages(self):
+        """Navigate to messages."""
+        logger.info("[GO_TO_MESSAGES] Navigating...")
         self.driver.get("https://www.linkedin.com/messaging/")
         time.sleep(5)
+        
+        current_url = self.driver.current_url
+        logger.info(f"[GO_TO_MESSAGES] Current URL: {current_url}")
+        
+        if "login" in current_url:
+            raise Exception("Session expired - restart bot")
+
         self.main_window = self.driver.current_window_handle
+        logger.info(f"[GO_TO_MESSAGES] Main window handle: {self.main_window}")
+        
         self._scroll_to_load_threads()
 
     def _scroll_to_load_threads(self):
-        """Scroll until all or required number of threads are loaded."""
-        last_height = self.driver.execute_script(
-            "return document.querySelector('.msg-conversations-container__conversations-list').scrollHeight"
-        )
-        loaded_threads = 0
-        while True:
+        """Scroll to load threads."""
+        logger.info("[SCROLL] Loading threads...")
+        
+        try:
+            selectors = [
+                ".msg-conversations-container__conversations-list",
+                "ul.msg-conversations-container__conversations-list",
+            ]
+            
+            container = None
+            for sel in selectors:
+                try:
+                    container = self.driver.find_element(By.CSS_SELECTOR, sel)
+                    if container:
+                        logger.info(f"[SCROLL] Found container: {sel}")
+                        break
+                except:
+                    continue
+            
+            if not container:
+                logger.warning("[SCROLL] Message container not found")
+                return
+
+            last_height = self.driver.execute_script("return arguments[0].scrollHeight", container)
+            
+            for scroll_count in range(20):
+                threads = self.driver.find_elements(
+                    By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
+                )
+                
+                logger.debug(f"[SCROLL] Scroll {scroll_count+1}: Found {len(threads)} threads")
+                
+                if self.num_messages != "all" and len(threads) >= int(self.num_messages):
+                    break
+
+                self.driver.execute_script("arguments[0].scrollTo(0, arguments[0].scrollHeight);", container)
+                time.sleep(2)
+                
+                new_height = self.driver.execute_script("return arguments[0].scrollHeight", container)
+                if new_height == last_height:
+                    logger.info("[SCROLL] Reached end of list")
+                    break
+                last_height = new_height
+
+            final_threads = self.driver.find_elements(
+                By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
+            )
+            logger.info(f"[SCROLL] Loaded {len(final_threads)} threads")
+            
+        except Exception as e:
+            logger.error(f"[SCROLL] Error: {e}", exc_info=True)
+
+    def _extract_contact_modal(self):
+        """Extract email, phone from contact modal."""
+        info = {"email": None, "phone": None, "public_linkedin": None}
+        
+        logger.debug("[MODAL] Attempting to open contact info modal...")
+        
+        try:
+            # Click contact info
+            clicked = False
+            selectors = [
+                "//a[@id='top-card-text-details-contact-info']", 
+                "//a[contains(@href, '/overlay/contact-info/')]"
+            ]
+            
+            for sel in selectors:
+                try:
+                    btn = self.driver.find_element(By.XPATH, sel)
+                    if btn.is_displayed():
+                        self.driver.execute_script("arguments[0].click();", btn)
+                        clicked = True
+                        logger.debug(f"[MODAL] Clicked contact info button: {sel}")
+                        break
+                except:
+                    continue
+            
+            if not clicked:
+                logger.debug("[MODAL] Contact info button not found")
+                return info
+            
+            time.sleep(3)
+            
+            # Wait for modal
+            try:
+                modal = self.wait.until(EC.presence_of_element_located((By.XPATH, "//div[@role='dialog']")))
+                logger.debug("[MODAL] Modal found")
+            except:
+                logger.debug("[MODAL] Modal not found after wait")
+                return info
+
+            # Email
+            try:
+                el = modal.find_element(By.XPATH, "//a[contains(@href, 'mailto:')]")
+                info['email'] = el.text.strip()
+                logger.debug(f"[MODAL] Found email: {info['email']}")
+            except:
+                logger.debug("[MODAL] No email found")
+
+            # Phone
+            try:
+                el = modal.find_element(By.XPATH, "//section[.//h3[text()='Phone']]//span[@class='t-14 t-black t-normal']")
+                info['phone'] = el.text.strip()
+                logger.debug(f"[MODAL] Found phone: {info['phone']}")
+            except:
+                logger.debug("[MODAL] No phone found")
+
+            # Profile URL
+            try:
+                el = modal.find_element(By.XPATH, "//a[contains(@href, 'linkedin.com/in/')]")
+                info['public_linkedin'] = el.get_attribute("href")
+                logger.debug(f"[MODAL] Found profile URL: {info['public_linkedin']}")
+            except:
+                logger.debug("[MODAL] No profile URL found")
+
+            # Close modal
+            try:
+                btn = self.driver.find_element(By.XPATH, "//button[@aria-label='Dismiss']")
+                self.driver.execute_script("arguments[0].click();", btn)
+                logger.debug("[MODAL] Modal closed")
+                time.sleep(1)
+            except:
+                logger.debug("[MODAL] Could not close modal")
+
+        except Exception as e:
+            logger.debug(f"[MODAL] Error: {e}")
+        
+        return info
+
+    def _extract_company(self):
+        """Extract company name."""
+        logger.debug("[COMPANY] Attempting to extract company...")
+        
+        try:
+            el = self.driver.find_element(
+                By.XPATH,
+                "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"
+            )
+            company = el.text.strip()
+            logger.debug(f"[COMPANY] Found: {company}")
+            return company
+        except:
+            pass
+        
+        try:
+            btn = self.driver.find_element(By.XPATH, "//button[contains(@aria-label, 'Current company:')]")
+            label = btn.get_attribute('aria-label')
+            company = label.replace('Current company:', '').split('.')[0].strip()
+            logger.debug(f"[COMPANY] Found from aria-label: {company}")
+            return company
+        except:
+            pass
+        
+        logger.debug("[COMPANY] Not found")
+        return None
+
+    def _safe_get_text(self, selectors):
+        """Try selectors to get text."""
+        for sel in selectors:
+            try:
+                el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                text = el.text.strip()
+                if text:
+                    logger.debug(f"[GET_TEXT] Found with '{sel}': {text[:50]}")
+                    return text
+            except:
+                continue
+        return None
+
+    def extract_recent_contacts(self):
+        """Extract contacts from threads with full debug logging."""
+        
+        logger.info("=" * 70)
+        logger.info("[EXTRACTION] STARTING CONTACT EXTRACTION")
+        logger.info("=" * 70)
+        
+        contacts = []
+        successful = 0
+        skipped_no_profile = 0
+        skipped_invalid_name = 0
+        errors = 0
+        
+        try:
+            # Find threads
+            logger.info("[EXTRACTION] Finding message threads...")
+            
             threads = self.driver.find_elements(
                 By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
             )
-            loaded_threads = len(threads)
+            
+            logger.info(f"[EXTRACTION] Found {len(threads)} threads")
+            
+            if not threads:
+                logger.error("[EXTRACTION] No threads found!")
+                self.driver.save_screenshot('debug_no_threads.png')
+                return contacts
 
-            if NUM_MESSAGES_TO_PROCESS != "all" and loaded_threads >= int(NUM_MESSAGES_TO_PROCESS):
-                break
+            total = len(threads)
+            if self.num_messages != "all":
+                total = min(total, int(self.num_messages))
 
-            self.driver.execute_script(
-                "document.querySelector('.msg-conversations-container__conversations-list').scrollTo(0, arguments[0]);",
-                last_height
-            )
-            time.sleep(2)
-            new_height = self.driver.execute_script(
-                "return document.querySelector('.msg-conversations-container__conversations-list').scrollHeight"
-            )
-            if new_height == last_height:  # no more threads to load
-                break
-            last_height = new_height
+            logger.info(f"[EXTRACTION] Will process {total} threads")
 
-        print(f"📜 Found {loaded_threads} total threads. Processing...")
-
-    def extract_contact_info_from_modal(self):
-        contact_info = {}
-        try:
-            # Wait for Contact Info button
-            contact_button = self.wait.until(
-                EC.element_to_be_clickable((By.ID, "top-card-text-details-contact-info"))
-            )
-            self.driver.execute_script("arguments[0].click();", contact_button)
-            time.sleep(2)
-
-            # Wait for modal to appear
-            modal = self.wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div.artdeco-modal__content"))
-            )
-
-            # Extract public LinkedIn URL
-            try:
-                profile_url_el = modal.find_element(
-                    By.CSS_SELECTOR, "section.pv-contact-info__contact-type a[href*='linkedin.com/in/']"
-                )
-                contact_info['public_linkedin'] = profile_url_el.get_attribute("href")
-            except:
-                contact_info['public_linkedin'] = ""
-
-            # Extract email if available
-            try:
-                email_section = modal.find_element(
-                    By.XPATH, "//section[contains(@class,'pv-contact-info__contact-type')][.//h3[contains(text(),'Email')]]"
-                )
-                email = email_section.find_element(By.CSS_SELECTOR, "a").text.strip()
-                contact_info['email'] = email
-            except:
-                contact_info['email'] = ""
-
-            # Create clean contact text with just profile and email
-            contact_info['full_text'] = f"Profile: {contact_info['public_linkedin']}\nEmail: {contact_info['email']}"
-
-            # Close the modal
-            try:
-                close_btn = modal.find_element(By.CSS_SELECTOR, "button.artdeco-modal__dismiss")
-                self.driver.execute_script("arguments[0].click();", close_btn)
-            except:
-                pass
-
-        except Exception as e:
-            print("⚠️ Could not fetch contact info from modal:", e)
-
-        return contact_info
-
-    def extract_recent_contacts(self):
-        contacts = []
-        try:
-            threads_locator = "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-            all_threads = self.driver.find_elements(By.XPATH, threads_locator)
-
-            total_threads = len(all_threads)
-            if NUM_MESSAGES_TO_PROCESS != "all":
-                total_threads = min(total_threads, int(NUM_MESSAGES_TO_PROCESS))
-
-            for i in range(total_threads):
+            for i in range(total):
+                logger.info("-" * 60)
+                logger.info(f"[THREAD {i+1}/{total}] Processing...")
+                logger.info("-" * 60)
+                
                 try:
-                    print(f"📨 Opening thread {i+1} of {total_threads}...")
-                    current_threads = self.driver.find_elements(By.XPATH, threads_locator)
-                    thread = current_threads[i]
+                    # Re-fetch threads
+                    threads = self.driver.find_elements(
+                        By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
+                    )
+                    
+                    if i >= len(threads):
+                        logger.warning(f"[THREAD {i+1}] Not found after re-fetch")
+                        continue
+                    
+                    thread = threads[i]
+                    
+                    # Click thread
+                    logger.info(f"[THREAD {i+1}] Clicking thread...")
                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", thread)
-                    thread.click()
+                    time.sleep(1)
+                    
+                    try:
+                        thread.click()
+                    except:
+                        self.driver.execute_script("arguments[0].click();", thread)
+                    
                     time.sleep(2)
 
-                    # Get profile link if available
-                    try:
-                        profile_link_el = self.driver.find_element(By.CSS_SELECTOR, "a[href*='/in/']")
-                        profile_url = profile_link_el.get_attribute("href")
-                    except:
-                        print("⚠️ No profile link found (group/system/archived). Skipping...")
+                    # ========== FIND PROFILE LINK ==========
+                    logger.info(f"[THREAD {i+1}] Looking for profile link...")
+                    
+                    profile_url = None
+                    profile_selectors = [
+                        "a.msg-thread__link-to-profile",
+                        ".msg-thread__link-to-profile",
+                        "a[href*='/in/']"
+                    ]
+                    
+                    for sel in profile_selectors:
+                        try:
+                            el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                            href = el.get_attribute("href")
+                            if href and '/in/' in href:
+                                profile_url = href
+                                logger.info(f"[THREAD {i+1}] Found profile URL: {profile_url}")
+                                break
+                        except:
+                            continue
+                    
+                    if not profile_url:
+                        logger.warning(f"[THREAD {i+1}] No profile link found - SKIPPING")
+                        skipped_no_profile += 1
                         continue
 
-                    # Open profile in a new tab
+                    # ========== OPEN PROFILE IN NEW TAB ==========
+                    logger.info(f"[THREAD {i+1}] Opening profile in new tab...")
+                    
+                    original_windows = self.driver.window_handles
                     self.driver.execute_script("window.open(arguments[0]);", profile_url)
-                    self.driver.switch_to.window(self.driver.window_handles[-1])
                     time.sleep(3)
+                    
+                    new_windows = [w for w in self.driver.window_handles if w not in original_windows]
+                    
+                    if not new_windows:
+                        logger.warning(f"[THREAD {i+1}] Failed to open new tab - SKIPPING")
+                        errors += 1
+                        continue
+                    
+                    self.driver.switch_to.window(new_windows[0])
+                    logger.info(f"[THREAD {i+1}] Switched to profile tab")
+                    time.sleep(2)
 
-                    # Extract profile details
-                    full_name = self._safe_get_text("h1.text-heading-xlarge")
-                    title = self._safe_get_text("div.text-body-medium.break-words")
-                    location = self._safe_get_text("span.text-body-small.inline.t-black--light.break-words")
-                    pronouns = self._safe_get_text("span.text-body-small")
-                    connection = self._safe_get_text("span.dist-value")
+                    # ========== EXTRACT NAME ==========
+                    logger.info(f"[THREAD {i+1}] Extracting name...")
+                    
+                    full_name = self._safe_get_text([
+                        "h1.text-heading-xlarge",
+                        ".pv-top-card h1",
+                        "h1.inline"
+                    ])
+                    
+                    if not full_name or full_name == "LinkedIn Member":
+                        logger.warning(f"[THREAD {i+1}] Invalid name '{full_name}' - SKIPPING")
+                        skipped_invalid_name += 1
+                        self.driver.close()
+                        self.driver.switch_to.window(self.main_window)
+                        continue
 
-                    contact_info = self.extract_contact_info_from_modal()
+                    logger.info(f"[THREAD {i+1}] Name: {full_name}")
 
-                    # Determine which LinkedIn ID to use (prefer public URL slug)
-                    linkedin_id = profile_url.rstrip("/").split("/")[-1]  # Default to original ID
-                    if contact_info['public_linkedin']:
-                        # Try to get the public URL slug
-                        public_url = contact_info['public_linkedin'].rstrip("/")
-                        if '/in/' in public_url:
-                            linkedin_id = public_url.split('/in/')[-1]
+                    # ========== EXTRACT OTHER DATA ==========
+                    company = self._extract_company()
+                    logger.info(f"[THREAD {i+1}] Company: {company or 'N/A'}")
+                    
+                    location = self._safe_get_text([
+                        "span.text-body-small.inline.t-black--light.break-words",
+                        ".pv-top-card__location"
+                    ])
+                    logger.info(f"[THREAD {i+1}] Location: {location or 'N/A'}")
 
-                    # Log extracted data (CSV)
-                    log_csv(
-                        "logs/extracted_contacts.csv",
-                        [
-                            datetime.now(),
-                            self.username,
-                            full_name,
-                            title,
-                            location,
-                            pronouns,
-                            connection,
-                            profile_url,
-                            contact_info.get('full_text', '')
-                        ]
-                    )
+                    contact_info = self._extract_contact_modal()
+                    logger.info(f"[THREAD {i+1}] Email: {contact_info.get('email') or 'N/A'}")
+                    logger.info(f"[THREAD {i+1}] Phone: {contact_info.get('phone') or 'N/A'}")
 
-                    # Also save to DB
-                    insert_contact(
-                        full_name if full_name else None,
+                    # ========== GENERATE IDs ==========
+                    linkedin_internal_id = profile_url.rstrip("/").split("/")[-1].split('?')[0]
+                    linkedin_id = linkedin_internal_id
+                    
+                    current_url = self.driver.current_url
+                    if "/in/" in current_url:
+                        slug = current_url.split("/in/")[-1].split('?')[0].rstrip('/')
+                        if slug and len(slug) > 5:
+                            linkedin_id = slug
+
+                    logger.info(f"[THREAD {i+1}] LinkedIn ID: {linkedin_id}")
+
+                    # ========== SAVE TO CSV ==========
+                    logger.info(f"[THREAD {i+1}] === SAVING TO CSV ===")
+                    
+                    csv_row = [
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         self.username,
-                        None,
-                        None,
-                        linkedin_id,
-                        title if title else None,
-                        location if location else None
-                    )
+                        full_name,
+                        company or "",
+                        location or "",
+                        contact_info.get('email', ""),
+                        contact_info.get('phone', ""),
+                        profile_url,
+                        ""
+                    ]
+                    
+                    logger.info(f"[THREAD {i+1}] CSV Row: {csv_row}")
+                    
+                    try:
+                        csv_success = log_csv("logs/extracted_contacts.csv", csv_row)
+                        if csv_success:
+                            logger.info(f"[THREAD {i+1}] CSV: SUCCESS")
+                        else:
+                            logger.error(f"[THREAD {i+1}] CSV: FAILED (returned False)")
+                    except Exception as e:
+                        logger.error(f"[THREAD {i+1}] CSV: EXCEPTION - {e}", exc_info=True)
 
-                    print(f"✅ Extracted + Saved {full_name} to DB")
-                    contacts.append((full_name, title))
+                    # ========== SAVE TO API ==========
+                    logger.info(f"[THREAD {i+1}] === SAVING TO API ===")
+                    
+                    try:
+                        api_success = insert_contact(
+                            full_name=full_name,
+                            source_email=self.username,
+                            email=contact_info.get('email'),
+                            phone=contact_info.get('phone'),
+                            linkedin_id=linkedin_id,
+                            linkedin_internal_id=linkedin_internal_id,
+                            company_name=company,
+                            location=location
+                        )
+                        
+                        if api_success:
+                            successful += 1
+                            logger.info(f"[THREAD {i+1}] API: SUCCESS")
+                            contacts.append((full_name, company))
+                        else:
+                            logger.error(f"[THREAD {i+1}] API: FAILED (returned False)")
+                            
+                    except Exception as e:
+                        logger.error(f"[THREAD {i+1}] API: EXCEPTION - {e}", exc_info=True)
 
-                    # Close profile tab and return to main tab
+                    # ========== CLOSE TAB ==========
+                    logger.info(f"[THREAD {i+1}] Closing profile tab...")
                     self.driver.close()
                     self.driver.switch_to.window(self.main_window)
                     time.sleep(1)
+                    
+                    logger.info(f"[THREAD {i+1}] COMPLETED")
 
                 except Exception as e:
-                    print(f"⚠️ Error reading thread {i+1}: {e}")
-                    log_csv("logs/error_logs.csv", [datetime.now(), self.username, f"Thread {i+1}", str(e)])
-                    continue
+                    logger.error(f"[THREAD {i+1}] ERROR: {e}", exc_info=True)
+                    errors += 1
+                    
+                    # Recovery
+                    try:
+                        for w in self.driver.window_handles:
+                            if w != self.main_window:
+                                self.driver.switch_to.window(w)
+                                self.driver.close()
+                        self.driver.switch_to.window(self.main_window)
+                    except:
+                        pass
 
         except Exception as e:
-            print(f"⚠️ Error in extract_recent_contacts: {e}")
-            log_csv("logs/error_logs.csv", [datetime.now(), self.username, "extract_recent_contacts", str(e)])
+            logger.error(f"[EXTRACTION] FATAL ERROR: {e}", exc_info=True)
+        
+        # ========== LOG ACTIVITY ==========
+        logger.info("=" * 60)
+        logger.info("[EXTRACTION] Logging activity to API...")
+        
+        if successful > 0:
+            try:
+                activity_success = log_extraction_activity(
+                    candidate_id=self.candidate_id,
+                    employee_id=self.employee_id,
+                    activity_count=successful,
+                    notes=f"Extracted {successful} contacts"
+                )
+                if activity_success:
+                    logger.info("[EXTRACTION] Activity logged successfully")
+                else:
+                    logger.error("[EXTRACTION] Activity logging failed")
+            except Exception as e:
+                logger.error(f"[EXTRACTION] Activity logging exception: {e}", exc_info=True)
+        else:
+            logger.info("[EXTRACTION] No successful extractions, skipping activity log")
+
+        # ========== SUMMARY ==========
+        self.extracted_count = successful
+        
+        logger.info("=" * 70)
+        logger.info("[EXTRACTION] SUMMARY")
+        logger.info("=" * 70)
+        logger.info(f"   Total threads processed: {total}")
+        logger.info(f"   Successful extractions:  {successful}")
+        logger.info(f"   Skipped (no profile):    {skipped_no_profile}")
+        logger.info(f"   Skipped (invalid name):  {skipped_invalid_name}")
+        logger.info(f"   Errors:                  {errors}")
+        logger.info("=" * 70)
+        
         return contacts
 
-    def _safe_get_text(self, selector):
-        try:
-            return self.driver.find_element(By.CSS_SELECTOR, selector).text.strip()
-        except:
-            return ""
-
     def run(self):
+        """Main execution."""
+        logger.info("=" * 70)
+        logger.info("[RUN] STARTING BOT")
+        logger.info("=" * 70)
+        
         try:
+            self.start_browser()
             self.login()
             self.go_to_messages()
             self.extract_recent_contacts()
-        except Exception as e:
-            print(f"Error in {self.username}: {str(e)}")
-        finally:
-            self.driver.quit()
             
+        except Exception as e:
+            logger.error(f"[RUN] BOT ERROR: {e}", exc_info=True)
+        finally:
+            if self.driver:
+                self.driver.quit()
+                logger.info("[RUN] Browser closed")
+        
+        logger.info("=" * 70)
+        logger.info("[RUN] BOT FINISHED")
+        logger.info("=" * 70)
