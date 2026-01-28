@@ -5,5 +5,7 @@ __pycache__/
 *.pyc
 logs/
 *.log
+*.csv
 debug_*.png
 .venv/
+
