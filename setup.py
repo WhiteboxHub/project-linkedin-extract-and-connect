@@ -28,9 +28,7 @@ DEFAULT_API_URLS = {
 
 # Job Type IDs for activity logging
 EXTRACTION_JOB_ID = 120      # bot_linkedin_message_extraction
-CONNECTOR_JOB_ID = 121       # bot_linkedin_friend_connector
 EXTRACTION_UNIQUE_ID = "bot_linkedin_message_extraction"
-CONNECTOR_UNIQUE_ID = "bot_linkedin_friend_connector"
 
 # ============================================
 # HELPER FUNCTIONS
@@ -202,7 +200,7 @@ def get_candidates(api_url, token):
 # ============================================
 
 def verify_job_types(api_url, token, employee_id):
-    """Verify job types exist and return their IDs."""
+    """Verify extraction job type exists and return its ID."""
     try:
         print("Verifying job types...")
         response = requests.get(
@@ -214,31 +212,25 @@ def verify_job_types(api_url, token, employee_id):
         job_types = response.json()
 
         extraction_id = None
-        connector_id = None
 
         for job in job_types:
             unique_id = job.get("unique_id", "")
             if unique_id == EXTRACTION_UNIQUE_ID:
                 extraction_id = job["id"]
                 print(f"   Extraction job found (ID: {extraction_id})")
-            if unique_id == CONNECTOR_UNIQUE_ID:
-                connector_id = job["id"]
-                print(f"   Connector job found (ID: {connector_id})")
+                break
 
-        # Use defaults if not found
+        # Use default if not found
         if not extraction_id:
             extraction_id = EXTRACTION_JOB_ID
             print(f"   Using default extraction job ID: {extraction_id}")
-        if not connector_id:
-            connector_id = CONNECTOR_JOB_ID
-            print(f"   Using default connector job ID: {connector_id}")
 
-        return extraction_id, connector_id
+        return extraction_id
 
     except Exception as e:
         print(f"Could not verify job types: {e}")
-        print(f"Using defaults - Extraction: {EXTRACTION_JOB_ID}, Connector: {CONNECTOR_JOB_ID}")
-        return EXTRACTION_JOB_ID, CONNECTOR_JOB_ID
+        print(f"Using default - Extraction: {EXTRACTION_JOB_ID}")
+        return EXTRACTION_JOB_ID
 
 # ============================================
 # API TEST
@@ -335,7 +327,6 @@ WBL_CONFIG = {{
     
     # Job Configuration (for activity logging)
     "EXTRACTION_JOB_ID": {config['extraction_job_id']},    # bot_linkedin_message_extraction
-    "CONNECTOR_JOB_ID": {config['connector_job_id']},      # bot_linkedin_friend_connector
     
     # Token Metadata
     "TOKEN_GENERATED_AT": "{config['generated_at']}",
@@ -482,7 +473,7 @@ def run_setup():
     # Step 4: Verify Job Types
     print_step(4, "Verify Job Types")
     
-    extraction_job_id, connector_job_id = verify_job_types(api_url, token, employee_id)
+    extraction_job_id = verify_job_types(api_url, token, employee_id)
 
     # Step 5: Test APIs
     print_step(5, "Test API Endpoints")
@@ -508,7 +499,6 @@ def run_setup():
         "candidate_id": selected_candidate_id,
         "candidate_name": selected_candidate_name,
         "extraction_job_id": extraction_job_id,
-        "connector_job_id": connector_job_id,
         "environment": environment,
         "generated_at": datetime.now().isoformat()
     }
@@ -530,12 +520,11 @@ Summary:
    Candidate ID:     {selected_candidate_id or 'None'}
    Candidate Name:   {selected_candidate_name or 'N/A'}
    Extraction Job:   {extraction_job_id}
-   Connector Job:    {connector_job_id}
 
 Next Steps:
    1. Update credentials/accounts.yaml with LinkedIn accounts
-   2. Run extraction: python main.py
-   3. Run connector:  python connections.py
+   2. Run validation: python validate_profiles.py
+   3. Run extraction: python main.py
 
 To refresh candidates from API:
    python setup.py --refresh-candidates

@@ -1,169 +1,108 @@
-from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
+# utils/browser.py
+"""
+Browser setup with undetected ChromeDriver and stealth features.
+Replaces standard Selenium with undetected-chromedriver for anti-detection.
+"""
+
 import os
 import logging
-import shutil
-import subprocess
-import platform
+from pathlib import Path
+from typing import Tuple
+from selenium.webdriver.support.ui import WebDriverWait
+import undetected_chromedriver as uc
+
+# Import stealth modules
+from stealth import (
+    setup_undetected_chrome,
+    apply_fingerprint_randomization,
+    check_chrome_running,
+    release_profile_lock,
+)
 
 logger = logging.getLogger(__name__)
 
-# -------------------------------------------------
-# Utility: Get Chrome Version (for logging only)
-# -------------------------------------------------
-def get_chrome_version():
-    try:
-        if platform.system() == "Windows":
-            chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-            result = subprocess.check_output(
-                f'"{chrome_path}" --version',
-                shell=True
-            ).decode()
-            return result.strip()
-        else:
-            result = subprocess.check_output(["google-chrome", "--version"]).decode()
-            return result.strip()
-    except Exception:
-        return "Unknown"
 
-
-# -------------------------------------------------
-# Main Browser Setup
-# -------------------------------------------------
-def setup_browser(chrome_profile_name):
+def setup_browser(chrome_profile_name: str) -> Tuple[uc.Chrome, WebDriverWait]:
     """
-    Setup Chrome browser using Selenium Manager
-    - Auto-matches ChromeDriver to installed Chrome
-    - Isolates each profile
+    Setup browser using undetected ChromeDriver with full stealth features.
+    
+    This function replaces the old Selenium-based setup with:
+    - Undetected ChromeDriver (bypasses automation detection)
+    - Fingerprint randomization (unique browser identity)
+    - Profile safety checks (prevents conflicts)
+    
+    Args:
+        chrome_profile_name: Name of Chrome profile to use
+        
+    Returns:
+        Tuple of (driver, wait) objects
+        
+    Raises:
+        RuntimeError: If Chrome is already running with profile
+        FileNotFoundError: If Chrome profile doesn't exist
     """
     driver = None
-
+    profile_path = None
+    
     try:
         logger.info("=" * 60)
-        logger.info(f"Setting up browser for profile: {chrome_profile_name}")
-
-        chrome_version = get_chrome_version()
-        logger.info(f"Detected Chrome: {chrome_version}")
-
-        # -------------------------------------------------
-        # Locate Chrome User Data
-        # -------------------------------------------------
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if not local_app_data:
-            raise EnvironmentError("LOCALAPPDATA not found")
-
-        chrome_user_data_dir = os.path.join(
-            local_app_data, "Google", "Chrome", "User Data"
-        )
-
-        source_profile_path = os.path.join(chrome_user_data_dir, chrome_profile_name)
-
-        if not os.path.exists(source_profile_path):
-            raise FileNotFoundError(
-                f"Chrome profile not found: {source_profile_path}\n"
-                f"Check chrome://version → Profile Path"
-            )
-
-        # -------------------------------------------------
-        # Bot profile isolation directory
-        # -------------------------------------------------
-        temp_base = os.path.join(
-            os.environ.get("TEMP", "/tmp"),
-            "linkedin_bot_profiles"
-        )
-
-        bot_user_data_dir = os.path.join(temp_base, chrome_profile_name)
-        bot_profile_path = os.path.join(bot_user_data_dir, chrome_profile_name)
-
-        os.makedirs(bot_user_data_dir, exist_ok=True)
-
-        # -------------------------------------------------
-        # Copy profile on first run
-        # -------------------------------------------------
-        if not os.path.exists(bot_profile_path):
-            logger.info("First run → copying Chrome profile")
-
-            shutil.copytree(
-                source_profile_path,
-                bot_profile_path,
-                ignore=shutil.ignore_patterns(
-                    "LockFile",
-                    "SingletonLock",
-                    "*.tmp",
-                    "Cache*",
-                    "Code Cache",
-                    "blob_storage",
-                    "GPUCache",
-                    "ShaderCache",
-                    "Service Worker",
-                ),
-            )
-
-            logger.info("Profile copied successfully")
-        else:
-            logger.info("Using existing bot profile (persistent session)")
-
-        # -------------------------------------------------
-        # Chrome Options
-        # -------------------------------------------------
-        options = webdriver.ChromeOptions()
-
-        # Profile binding
-        options.add_argument(f"--user-data-dir={bot_user_data_dir}")
-        options.add_argument(f"--profile-directory={chrome_profile_name}")
-
-        # Anti-detection
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_experimental_option(
-            "excludeSwitches", ["enable-automation", "enable-logging"]
-        )
-        options.add_experimental_option("useAutomationExtension", False)
-
-        # Stability
-        options.add_argument("--no-first-run")
-        options.add_argument("--no-default-browser-check")
-        options.add_argument("--start-maximized")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-
-        # -------------------------------------------------
-        # Launch Browser (AUTO MATCHED DRIVER)
-        # -------------------------------------------------
-        logger.info("Launching Chrome via Selenium Manager (auto driver match)")
-        driver = webdriver.Chrome(options=options)
-
-        # -------------------------------------------------
-        # Final tweaks
-        # -------------------------------------------------
-        wait = WebDriverWait(driver, 20)
-
-        driver.execute_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
-
-        logger.info("Browser started successfully")
+        logger.info("Setting up browser with STEALTH features")
+        logger.info(f"Profile: {chrome_profile_name}")
         logger.info("=" * 60)
-
+        
+        # Setup undetected Chrome with profile safety checks
+        driver, wait = setup_undetected_chrome(
+            chrome_profile_name=chrome_profile_name,
+            headless=False,  # Headless mode is more detectable
+        )
+        
+        # Apply fingerprint randomization
+        logger.info("Applying fingerprint randomization...")
+        apply_fingerprint_randomization(driver)
+        
+        logger.info("✅ Browser setup complete with stealth features")
+        logger.info("=" * 60)
+        
         return driver, wait
-
+        
     except Exception as e:
-        logger.error("Browser setup failed", exc_info=True)
+        logger.error(f"Browser setup failed: {e}", exc_info=True)
+        
+        # Cleanup on failure
         if driver:
             try:
                 driver.quit()
             except Exception:
                 pass
+        
+        # Release profile lock if it was created
+        if profile_path:
+            try:
+                release_profile_lock(profile_path)
+            except Exception:
+                pass
+        
         raise
 
 
-# -------------------------------------------------
-# Safe Browser Close
-# -------------------------------------------------
-def close_browser(driver):
+def close_browser(driver: uc.Chrome, profile_path: str = None) -> None:
+    """
+    Safely close browser and release profile lock.
+    
+    Args:
+        driver: Chrome driver instance
+        profile_path: Optional profile path for lock release
+    """
     if driver:
         try:
             driver.quit()
             logger.info("Browser closed")
         except Exception as e:
             logger.error(f"Error closing browser: {e}")
+    
+    # Release profile lock if path provided
+    if profile_path:
+        try:
+            release_profile_lock(profile_path)
+        except Exception as e:
+            logger.debug(f"Error releasing profile lock: {e}")

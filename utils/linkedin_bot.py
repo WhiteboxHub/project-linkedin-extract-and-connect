@@ -12,10 +12,24 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from utils.logger import log_csv
 from utils.browser import setup_browser
-from utils.db import insert_contact, log_extraction_activity
+from utils.db import insert_contact, bulk_insert_contacts, log_extraction_activity
 import yaml
 import os
 import logging
+
+# Import stealth modules for human-like behavior
+from stealth import HumanBehavior, random_pause
+
+# Import Phase 3 modules
+from modules import BrowserManager, DiscoveryModule, WorkflowModule, PersistenceModule
+from utils.exceptions import BrowserException, NavigationException, ExtractionException
+from config.secrets import get_execution_config
+
+# Import Phase 5 metrics
+from utils.metrics import ExtractionMetrics
+
+# Import Phase 6 DuckDB
+from utils.duckdb_manager import DuckDBManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,31 +51,123 @@ class LinkedInBot:
     """LinkedIn Contact Extraction Bot with Full Debug Logging."""
     
     def __init__(self, username, password, chrome_profile, employee_id, candidate_id):
+        # Credentials
         self.username = username
         self.password = password
         self.chrome_profile = chrome_profile
         self.employee_id = employee_id
         self.candidate_id = candidate_id
+        
+        # Module initialization (driver/wait set in start_browser)
+        self.browser_manager = None
         self.driver = None
         self.wait = None
+        self.human = HumanBehavior()
+        self.discovery = None
+        self.workflow = None
+        self.persistence = None
+        
+        # State
         self.main_window = None
         self.num_messages = NUM_MESSAGES_TO_PROCESS
         self.extracted_count = 0
         
+        # Execution config (Phase 4)
+        self.max_contacts = self._get_max_contacts()
+        self.thread_delay_range = self._get_thread_delay_range()
+        
+        # Metrics tracking (Phase 5)
+        self.metrics = ExtractionMetrics()
+        
+        # DuckDB tracking (Phase 6) - use separate file to avoid IDE locks
+        self.duckdb = DuckDBManager(db_path="data/bot_contacts.duckdb")
+        self.current_run_id = None
+        
         logger.info("=" * 60)
-        logger.info("LinkedInBot initialized")
+        logger.info("LinkedInBot initialized (Modular Architecture - Phase 6)")
         logger.info(f"   Username: {username}")
         logger.info(f"   Chrome Profile: {chrome_profile}")
         logger.info(f"   Employee ID: {employee_id}")
         logger.info(f"   Candidate ID: {candidate_id}")
         logger.info(f"   Messages to process: {self.num_messages}")
+        logger.info(f"   Max contacts per run: {self.max_contacts}")
+        logger.info(f"   Thread delay range: {self.thread_delay_range[0]}-{self.thread_delay_range[1]}ms")
         logger.info("=" * 60)
 
     def start_browser(self):
-        """Start browser with profile."""
-        logger.info("[START_BROWSER] Starting...")
-        self.driver, self.wait = setup_browser(self.chrome_profile)
-        logger.info(f"[START_BROWSER] Browser started: {self.chrome_profile}")
+        """Start browser using BrowserManager (Phase 4)."""
+        try:
+            logger.info("[START_BROWSER] Starting with BrowserManager...")
+            
+            # Initialize BrowserManager
+            self.browser_manager = BrowserManager(
+                chrome_profile=self.chrome_profile,
+                headless=False
+            )
+            
+            # Start browser
+            self.driver, self.wait = self.browser_manager.start_browser()
+            
+            # Initialize other modules now that we have driver/wait
+            self.discovery = DiscoveryModule(self.driver, self.wait, self.human)
+            self.workflow = WorkflowModule(self.driver, self.wait, self.human)
+            self.persistence = PersistenceModule(self.employee_id, self.candidate_id)
+            
+            logger.info("[START_BROWSER] ✅ All modules initialized successfully")
+            logger.info(f"[START_BROWSER]    - BrowserManager")
+            logger.info(f"[START_BROWSER]    - DiscoveryModule")
+            logger.info(f"[START_BROWSER]    - WorkflowModule")
+            logger.info(f"[START_BROWSER]    - PersistenceModule")
+            
+        except BrowserException as e:
+            logger.error(f"[START_BROWSER] Failed: {e}")
+            raise
+    
+    def _get_max_contacts(self) -> int:
+        """Get max contacts limit from config (Phase 4)."""
+        try:
+            config = get_execution_config()
+            return config.get('MAX_CONTACTS_PER_RUN', 50)
+        except Exception as e:
+            logger.warning(f"Failed to load execution config: {e}, using default")
+            return 50  # Default
+    
+    def _get_thread_delay_range(self) -> tuple:
+        """Get thread delay range from config (Phase 4)."""
+        try:
+            config = get_execution_config()
+            return (
+                config.get('MIN_THREAD_DELAY_MS', 2000),
+                config.get('MAX_THREAD_DELAY_MS', 5000)
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load execution config: {e}, using defaults")
+            return (2000, 5000)  # Defaults
+    
+    def _apply_thread_delay(self):
+        """Apply rate limiting between threads (Phase 4)."""
+        min_delay, max_delay = self.thread_delay_range
+        delay_ms = random.randint(min_delay, max_delay)
+        delay_s = delay_ms / 1000.0
+        
+        logger.debug(f"[RATE_LIMIT] Waiting {delay_s:.2f}s before next thread")
+        time.sleep(delay_s)
+    
+    def _recover_from_error(self):
+        """Recover from extraction error (Phase 4)."""
+        try:
+            # Close any extra windows
+            for w in self.driver.window_handles:
+                if w != self.main_window:
+                    self.driver.switch_to.window(w)
+                    self.driver.close()
+            
+            # Return to main window
+            self.driver.switch_to.window(self.main_window)
+            logger.debug("[RECOVERY] Returned to main window")
+            
+        except Exception as e:
+            logger.warning(f"[RECOVERY] Failed: {e}")
 
     def login(self):
         """Login to LinkedIn or verify session."""
@@ -97,20 +203,19 @@ class LinkedInBot:
             except:
                 logger.info("[LOGIN] Navigating to login page...")
                 self.driver.get("https://www.linkedin.com/login")
-                time.sleep(2)
+                self.human.random_pause(1, 2)  # Natural pause after navigation
             
             # Fill credentials
             logger.info("[LOGIN] Filling credentials...")
             username_field = self.wait.until(EC.presence_of_element_located((By.ID, 'username')))
-            username_field.clear()
-            username_field.send_keys(self.username)
+            self.human.human_type(username_field, self.username)
             
             password_field = self.driver.find_element(By.ID, 'password')
-            password_field.clear()
-            password_field.send_keys(self.password)
+            self.human.human_type(password_field, self.password)
             
             logger.info("[LOGIN] Clicking submit...")
-            self.driver.find_element(By.XPATH, "//button[@type='submit']").click()
+            submit_button = self.driver.find_element(By.XPATH, "//button[@type='submit']")
+            self.human.human_click(self.driver, submit_button)
             
             # Wait for login
             for i in range(30):
@@ -124,12 +229,12 @@ class LinkedInBot:
                 if "challenge" in current_url or "checkpoint" in current_url:
                     logger.warning("[LOGIN] VERIFICATION REQUIRED - complete manually")
                     while "feed" not in self.driver.current_url:
-                        time.sleep(5)
+                        self.human.random_pause(3, 5)
                     break
                     
-                time.sleep(2)
+                self.human.random_pause(1, 2)  # Natural waiting
 
-            time.sleep(random.uniform(3, 5))
+            self.human.random_pause(2, 4)  # Post-login pause
                 
         except Exception as e:
             logger.error(f"[LOGIN] Failed: {e}", exc_info=True)
@@ -137,74 +242,44 @@ class LinkedInBot:
             raise
 
     def go_to_messages(self):
-        """Navigate to messages."""
-        logger.info("[GO_TO_MESSAGES] Navigating...")
-        self.driver.get("https://www.linkedin.com/messaging/")
-        time.sleep(5)
-        
-        current_url = self.driver.current_url
-        logger.info(f"[GO_TO_MESSAGES] Current URL: {current_url}")
-        
-        if "login" in current_url:
-            raise Exception("Session expired - restart bot")
-
-        self.main_window = self.driver.current_window_handle
-        logger.info(f"[GO_TO_MESSAGES] Main window handle: {self.main_window}")
-        
-        self._scroll_to_load_threads()
+        """Navigate to messages using DiscoveryModule (Phase 4)."""  
+        try:
+            logger.info("[GO_TO_MESSAGES] Using DiscoveryModule...")
+            
+            # Navigate to messages
+            self.discovery.navigate_to_messages()
+            
+            # Store main window handle
+            self.main_window = self.driver.current_window_handle
+            logger.info(f"[GO_TO_MESSAGES] Main window: {self.main_window}")
+            
+            # Load threads with limit
+            max_threads = None if self.num_messages == "all" else int(self.num_messages)
+            # Apply max_contacts limit as well
+            if max_threads is None:
+                max_threads = self.max_contacts
+            else:
+                max_threads = min(max_threads, self.max_contacts)
+            
+            self.discovery.load_all_threads(
+                max_scrolls=20,
+                max_threads=max_threads
+            )
+            
+            thread_count = self.discovery.get_thread_count()
+            logger.info(f"[GO_TO_MESSAGES] ✅ Loaded {thread_count} threads")
+            
+        except NavigationException as e:
+            logger.error(f"[GO_TO_MESSAGES] Failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"[GO_TO_MESSAGES] Unexpected error: {e}", exc_info=True)
+            raise NavigationException(f"Failed to navigate to messages: {e}")
 
     def _scroll_to_load_threads(self):
-        """Scroll to load threads."""
-        logger.info("[SCROLL] Loading threads...")
-        
-        try:
-            selectors = [
-                ".msg-conversations-container__conversations-list",
-                "ul.msg-conversations-container__conversations-list",
-            ]
-            
-            container = None
-            for sel in selectors:
-                try:
-                    container = self.driver.find_element(By.CSS_SELECTOR, sel)
-                    if container:
-                        logger.info(f"[SCROLL] Found container: {sel}")
-                        break
-                except:
-                    continue
-            
-            if not container:
-                logger.warning("[SCROLL] Message container not found")
-                return
-
-            last_height = self.driver.execute_script("return arguments[0].scrollHeight", container)
-            
-            for scroll_count in range(20):
-                threads = self.driver.find_elements(
-                    By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-                )
-                
-                logger.debug(f"[SCROLL] Scroll {scroll_count+1}: Found {len(threads)} threads")
-                
-                if self.num_messages != "all" and len(threads) >= int(self.num_messages):
-                    break
-
-                self.driver.execute_script("arguments[0].scrollTo(0, arguments[0].scrollHeight);", container)
-                time.sleep(2)
-                
-                new_height = self.driver.execute_script("return arguments[0].scrollHeight", container)
-                if new_height == last_height:
-                    logger.info("[SCROLL] Reached end of list")
-                    break
-                last_height = new_height
-
-            final_threads = self.driver.find_elements(
-                By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-            )
-            logger.info(f"[SCROLL] Loaded {len(final_threads)} threads")
-            
-        except Exception as e:
-            logger.error(f"[SCROLL] Error: {e}", exc_info=True)
+        """DEPRECATED: Now handled by DiscoveryModule.load_all_threads() (Phase 4)"""
+        logger.warning("[SCROLL] This method is deprecated. Use DiscoveryModule instead.")
+        pass
 
     def _extract_contact_modal(self):
         """Extract email, phone from contact modal."""
@@ -224,7 +299,7 @@ class LinkedInBot:
                 try:
                     btn = self.driver.find_element(By.XPATH, sel)
                     if btn.is_displayed():
-                        self.driver.execute_script("arguments[0].click();", btn)
+                        self.human.human_click(self.driver, btn)  # Use human click
                         clicked = True
                         logger.debug(f"[MODAL] Clicked contact info button: {sel}")
                         break
@@ -235,7 +310,7 @@ class LinkedInBot:
                 logger.debug("[MODAL] Contact info button not found")
                 return info
             
-            time.sleep(3)
+            self.human.random_pause(2, 3)  # Wait for modal to open
             
             # Wait for modal
             try:
@@ -272,9 +347,9 @@ class LinkedInBot:
             # Close modal
             try:
                 btn = self.driver.find_element(By.XPATH, "//button[@aria-label='Dismiss']")
-                self.driver.execute_script("arguments[0].click();", btn)
+                self.human.human_click(self.driver, btn)  # Use human click
                 logger.debug("[MODAL] Modal closed")
-                time.sleep(1)
+                self.human.random_pause(0.5, 1)  # Brief pause after closing
             except:
                 logger.debug("[MODAL] Could not close modal")
 
@@ -322,260 +397,335 @@ class LinkedInBot:
             except:
                 continue
         return None
+    
+    def _get_profile_url_from_thread(self):
+        """Get profile URL from current thread (Phase 4.2)."""
+        profile_selectors = [
+            "a.msg-thread__link-to-profile",
+            ".msg-thread__link-to-profile",
+            "a[href*='/in/']"
+        ]
+        
+        for sel in profile_selectors:
+            try:
+                el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                href = el.get_attribute("href")
+                if href and '/in/' in href:
+                    return href
+            except:
+                continue
+        return None
+    
+    def _open_profile_tab(self, profile_url):
+        """Open profile in new tab (Phase 4.2)."""
+        try:
+            original_windows = self.driver.window_handles
+            self.driver.execute_script("window.open(arguments[0]);", profile_url)
+            self.human.random_pause(2, 3)
+            
+            new_windows = [w for w in self.driver.window_handles if w not in original_windows]
+            
+            if not new_windows:
+                return False
+            
+            self.driver.switch_to.window(new_windows[0])
+            self.human.random_pause(1, 2)
+            return True
+        except Exception as e:
+            logger.error(f"[PROFILE_TAB] Failed to open: {e}")
+            return False
+    
+    def _close_profile_tab(self):
+        """Close profile tab and return to main window (Phase 4.2)."""
+        try:
+            self.driver.close()
+            self.driver.switch_to.window(self.main_window)
+            self.human.random_pause(0.5, 1)
+        except Exception as e:
+            logger.warning(f"[PROFILE_TAB] Failed to close: {e}")
+    
+    def _extract_from_profile_page(self, thread_num, profile_url):
+        """Extract contact data from profile page (Phase 4.2)."""
+        try:
+            # Extract name
+            full_name = self._safe_get_text([
+                "h1.text-heading-xlarge",
+                ".pv-top-card h1",
+                "h1.inline"
+            ])
+            
+            if not full_name or full_name == "LinkedIn Member":
+                logger.warning(f"[THREAD {thread_num}] Invalid name '{full_name}'")
+                return None
+            
+            logger.info(f"[THREAD {thread_num}] Name: {full_name}")
+            
+            # Extract company
+            company = self._extract_company()
+            logger.info(f"[THREAD {thread_num}] Company: {company or 'N/A'}")
+            
+            # Extract location
+            location = self._safe_get_text([
+                "span.text-body-small.inline.t-black--light.break-words",
+                ".pv-top-card__location"
+            ])
+            logger.info(f"[THREAD {thread_num}] Location: {location or 'N/A'}")
+            
+            # Extract contact info
+            contact_info = self._extract_contact_modal()
+            logger.info(f"[THREAD {thread_num}] Email: {contact_info.get('email') or 'N/A'}")
+            logger.info(f"[THREAD {thread_num}] Phone: {contact_info.get('phone') or 'N/A'}")
+            
+            # Generate IDs
+            linkedin_internal_id = profile_url.rstrip("/").split("/")[-1].split('?')[0]
+            linkedin_id = linkedin_internal_id
+            
+            current_url = self.driver.current_url
+            if "/in/" in current_url:
+                slug = current_url.split("/in/")[-1].split('?')[0].rstrip('/')
+                if slug and len(slug) > 5:
+                    linkedin_id = slug
+            
+            logger.info(f"[THREAD {thread_num}] LinkedIn ID: {linkedin_id}")
+            
+            # Return contact data
+            return {
+                "full_name": full_name,
+                "source_email": self.username,
+                "email": contact_info.get('email'),
+                "phone": contact_info.get('phone'),
+                "linkedin_id": linkedin_id,
+                "linkedin_internal_id": linkedin_internal_id,
+                "company_name": company,
+                "location": location,
+                "job_source": "Bot Linkedin Message Extraction",
+                "profile_url": profile_url
+            }
+            
+        except Exception as e:
+            logger.error(f"[THREAD {thread_num}] Extraction error: {e}", exc_info=True)
+            return None
+    
+    def _log_contact_to_csv(self, contact_data):
+        """Log contact to CSV file (Phase 4.2)."""
+        try:
+            csv_row = [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                contact_data.get('source_email', ''),
+                contact_data.get('full_name', ''),
+                contact_data.get('company_name', ''),
+                contact_data.get('location', ''),
+                contact_data.get('email', ''),
+                contact_data.get('phone', ''),
+                contact_data.get('profile_url', ''),
+                ""
+            ]
+            
+            csv_success = log_csv("logs/extracted_contacts.csv", csv_row)
+            if csv_success:
+                logger.debug("[CSV] Logged successfully")
+            else:
+                logger.warning("[CSV] Failed to log")
+        except Exception as e:
+            logger.error(f"[CSV] Exception: {e}", exc_info=True)
 
     def extract_recent_contacts(self):
-        """Extract contacts from threads with full debug logging."""
-        
+        """Extract contacts using modular architecture with metrics (Phase 5.1)."""
         logger.info("=" * 70)
-        logger.info("[EXTRACTION] STARTING CONTACT EXTRACTION")
+        logger.info("[EXTRACTION] STARTING (Modular Architecture - Phase 5)")
         logger.info("=" * 70)
         
-        contacts = []
+        # Start metrics tracking
+        self.metrics.start_extraction()
+        
+        # Stats
         successful = 0
         skipped_no_profile = 0
         skipped_invalid_name = 0
         errors = 0
+        consecutive_errors = 0
+        contacts_to_insert = []
+        contacts_summary = []
         
         try:
-            # Find threads
-            logger.info("[EXTRACTION] Finding message threads...")
-            
-            threads = self.driver.find_elements(
-                By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-            )
-            
+            # Get threads from DiscoveryModule
+            threads = self.discovery.get_thread_elements()
+            self.metrics.increment_threads_discovered(len(threads))
             logger.info(f"[EXTRACTION] Found {len(threads)} threads")
             
             if not threads:
                 logger.error("[EXTRACTION] No threads found!")
                 self.driver.save_screenshot('debug_no_threads.png')
-                return contacts
-
+                return []
+            
+            # Determine how many to process
             total = len(threads)
             if self.num_messages != "all":
                 total = min(total, int(self.num_messages))
-
-            logger.info(f"[EXTRACTION] Will process {total} threads")
-
+            
+            # Apply max_contacts limit (Phase 4 execution control)
+            total = min(total, self.max_contacts)
+            logger.info(f"[EXTRACTION] Will process {total} threads (limit: {self.max_contacts})")
+            
+            # Process each thread
             for i in range(total):
                 logger.info("-" * 60)
                 logger.info(f"[THREAD {i+1}/{total}] Processing...")
                 logger.info("-" * 60)
                 
                 try:
-                    # Re-fetch threads
-                    threads = self.driver.find_elements(
-                        By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"
-                    )
-                    
+                    # Re-fetch threads (stale element protection)
+                    threads = self.discovery.get_thread_elements()
                     if i >= len(threads):
                         logger.warning(f"[THREAD {i+1}] Not found after re-fetch")
                         continue
                     
                     thread = threads[i]
                     
-                    # Click thread
+                    # Click thread using WorkflowModule
                     logger.info(f"[THREAD {i+1}] Clicking thread...")
-                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", thread)
-                    time.sleep(1)
+                    if not self.workflow.click_thread(thread):
+                        logger.warning(f"[THREAD {i+1}] Failed to click thread")
+                        errors += 1
+                        consecutive_errors += 1
+                        continue
                     
-                    try:
-                        thread.click()
-                    except:
-                        self.driver.execute_script("arguments[0].click();", thread)
+                    # Reset consecutive errors on success
+                    consecutive_errors = 0
+                    self.metrics.reset_consecutive_errors()
                     
-                    time.sleep(2)
-
-                    # ========== FIND PROFILE LINK ==========
+                    # Find profile link
                     logger.info(f"[THREAD {i+1}] Looking for profile link...")
-                    
-                    profile_url = None
-                    profile_selectors = [
-                        "a.msg-thread__link-to-profile",
-                        ".msg-thread__link-to-profile",
-                        "a[href*='/in/']"
-                    ]
-                    
-                    for sel in profile_selectors:
-                        try:
-                            el = self.driver.find_element(By.CSS_SELECTOR, sel)
-                            href = el.get_attribute("href")
-                            if href and '/in/' in href:
-                                profile_url = href
-                                logger.info(f"[THREAD {i+1}] Found profile URL: {profile_url}")
-                                break
-                        except:
-                            continue
+                    profile_url = self._get_profile_url_from_thread()
                     
                     if not profile_url:
                         logger.warning(f"[THREAD {i+1}] No profile link found - SKIPPING")
                         skipped_no_profile += 1
+                        self.metrics.increment_skipped_no_profile()
                         continue
-
-                    # ========== OPEN PROFILE IN NEW TAB ==========
-                    logger.info(f"[THREAD {i+1}] Opening profile in new tab...")
                     
-                    original_windows = self.driver.window_handles
-                    self.driver.execute_script("window.open(arguments[0]);", profile_url)
-                    time.sleep(3)
+                    logger.info(f"[THREAD {i+1}] Found profile URL: {profile_url}")
                     
-                    new_windows = [w for w in self.driver.window_handles if w not in original_windows]
-                    
-                    if not new_windows:
-                        logger.warning(f"[THREAD {i+1}] Failed to open new tab - SKIPPING")
+                    # Open profile in new tab
+                    if not self._open_profile_tab(profile_url):
+                        logger.warning(f"[THREAD {i+1}] Failed to open profile tab")
                         errors += 1
+                        consecutive_errors += 1
                         continue
                     
-                    self.driver.switch_to.window(new_windows[0])
-                    logger.info(f"[THREAD {i+1}] Switched to profile tab")
-                    time.sleep(2)
-
-                    # ========== EXTRACT NAME ==========
-                    logger.info(f"[THREAD {i+1}] Extracting name...")
+                    # Extract contact data from profile
+                    contact_data = self._extract_from_profile_page(i+1, profile_url)
                     
-                    full_name = self._safe_get_text([
-                        "h1.text-heading-xlarge",
-                        ".pv-top-card h1",
-                        "h1.inline"
-                    ])
-                    
-                    if not full_name or full_name == "LinkedIn Member":
-                        logger.warning(f"[THREAD {i+1}] Invalid name '{full_name}' - SKIPPING")
+                    if not contact_data:
+                        logger.warning(f"[THREAD {i+1}] Failed to extract contact data")
                         skipped_invalid_name += 1
-                        self.driver.close()
-                        self.driver.switch_to.window(self.main_window)
+                        self.metrics.increment_skipped_invalid_name()
+                        self._close_profile_tab()
                         continue
-
-                    logger.info(f"[THREAD {i+1}] Name: {full_name}")
-
-                    # ========== EXTRACT OTHER DATA ==========
-                    company = self._extract_company()
-                    logger.info(f"[THREAD {i+1}] Company: {company or 'N/A'}")
                     
-                    location = self._safe_get_text([
-                        "span.text-body-small.inline.t-black--light.break-words",
-                        ".pv-top-card__location"
-                    ])
-                    logger.info(f"[THREAD {i+1}] Location: {location or 'N/A'}")
-
-                    contact_info = self._extract_contact_modal()
-                    logger.info(f"[THREAD {i+1}] Email: {contact_info.get('email') or 'N/A'}")
-                    logger.info(f"[THREAD {i+1}] Phone: {contact_info.get('phone') or 'N/A'}")
-
-                    # ========== GENERATE IDs ==========
-                    linkedin_internal_id = profile_url.rstrip("/").split("/")[-1].split('?')[0]
-                    linkedin_id = linkedin_internal_id
+                    # Log to CSV
+                    self._log_contact_to_csv(contact_data)
                     
-                    current_url = self.driver.current_url
-                    if "/in/" in current_url:
-                        slug = current_url.split("/in/")[-1].split('?')[0].rstrip('/')
-                        if slug and len(slug) > 5:
-                            linkedin_id = slug
-
-                    logger.info(f"[THREAD {i+1}] LinkedIn ID: {linkedin_id}")
-
-                    # ========== SAVE TO CSV ==========
-                    logger.info(f"[THREAD {i+1}] === SAVING TO CSV ===")
+                    # Store to DuckDB (Phase 6)
+                    if self.current_run_id:
+                        try:
+                            contact_id = self.duckdb.insert_contact(self.current_run_id, contact_data)
+                            logger.debug(f"[DUCKDB] Stored contact {contact_id}")
+                        except Exception as e:
+                            logger.warning(f"[DUCKDB] Failed to store contact: {e}")
                     
-                    csv_row = [
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        self.username,
-                        full_name,
-                        company or "",
-                        location or "",
-                        contact_info.get('email', ""),
-                        contact_info.get('phone', ""),
-                        profile_url,
-                        ""
-                    ]
-                    
-                    logger.info(f"[THREAD {i+1}] CSV Row: {csv_row}")
-                    
-                    try:
-                        csv_success = log_csv("logs/extracted_contacts.csv", csv_row)
-                        if csv_success:
-                            logger.info(f"[THREAD {i+1}] CSV: SUCCESS")
-                        else:
-                            logger.error(f"[THREAD {i+1}] CSV: FAILED (returned False)")
-                    except Exception as e:
-                        logger.error(f"[THREAD {i+1}] CSV: EXCEPTION - {e}", exc_info=True)
+                    # Collect for bulk insert
+                    contacts_to_insert.append(contact_data)
+                    contacts_summary.append((contact_data['full_name'], contact_data.get('company_name')))
 
-                    # ========== SAVE TO API ==========
-                    logger.info(f"[THREAD {i+1}] === SAVING TO API ===")
-                    
-                    try:
-                        api_success = insert_contact(
-                            full_name=full_name,
-                            source_email=self.username,
-                            email=contact_info.get('email'),
-                            phone=contact_info.get('phone'),
-                            linkedin_id=linkedin_id,
-                            linkedin_internal_id=linkedin_internal_id,
-                            company_name=company,
-                            location=location
-                        )
-                        
-                        if api_success:
-                            successful += 1
-                            logger.info(f"[THREAD {i+1}] API: SUCCESS")
-                            contacts.append((full_name, company))
-                        else:
-                            logger.error(f"[THREAD {i+1}] API: FAILED (returned False)")
-                            
-                    except Exception as e:
-                        logger.error(f"[THREAD {i+1}] API: EXCEPTION - {e}", exc_info=True)
+                    successful += 1
 
-                    # ========== CLOSE TAB ==========
-                    logger.info(f"[THREAD {i+1}] Closing profile tab...")
-                    self.driver.close()
-                    self.driver.switch_to.window(self.main_window)
-                    time.sleep(1)
+                    self.metrics.increment_contacts_extracted()
+                    self.metrics.increment_threads_processed()
                     
-                    logger.info(f"[THREAD {i+1}] COMPLETED")
-
-                except Exception as e:
-                    logger.error(f"[THREAD {i+1}] ERROR: {e}", exc_info=True)
+                    logger.info(f"[THREAD {i+1}] ✅ SUCCESS: {contact_data['full_name']}")
+                    
+                    # Close profile tab
+                    self._close_profile_tab()
+                    
+                    # Rate limiting (Phase 4 execution control)
+                    self._apply_thread_delay()
+                    self.metrics.increment_rate_limit_delays()
+                    
+                except ExtractionException as e:
+                    logger.warning(f"[THREAD {i+1}] Extraction failed: {e}")
                     errors += 1
+                    consecutive_errors += 1
+                    self.metrics.increment_errors()
+                    self.metrics.increment_consecutive_errors()
+                    self._recover_from_error()
+                    self.metrics.increment_error_recoveries()
                     
-                    # Recovery
-                    try:
-                        for w in self.driver.window_handles:
-                            if w != self.main_window:
-                                self.driver.switch_to.window(w)
-                                self.driver.close()
-                        self.driver.switch_to.window(self.main_window)
-                    except:
-                        pass
-
+                    # Check consecutive error limit
+                    if consecutive_errors >= 5:
+                        logger.error(f"[EXTRACTION] Too many consecutive errors ({consecutive_errors}), stopping")
+                        break
+                    continue
+                
+                except Exception as e:
+                    logger.error(f"[THREAD {i+1}] Unexpected error: {e}", exc_info=True)
+                    errors += 1
+                    consecutive_errors += 1
+                    self.metrics.increment_errors()
+                    self.metrics.increment_consecutive_errors()
+                    self._recover_from_error()
+                    self.metrics.increment_error_recoveries()
+                    
+                    # Check consecutive error limit
+                    if consecutive_errors >= 5:
+                        logger.error(f"[EXTRACTION] Too many consecutive errors ({consecutive_errors}), stopping")
+                        break
+                    continue
+        
         except Exception as e:
             logger.error(f"[EXTRACTION] FATAL ERROR: {e}", exc_info=True)
         
-        # ========== LOG ACTIVITY ==========
-        logger.info("=" * 60)
-        logger.info("[EXTRACTION] Logging activity to API...")
-        
-        if successful > 0:
+        # Bulk insert using PersistenceModule (Phase 4)
+        inserted_count = 0  # Track actual inserted count
+        if contacts_to_insert:
+            logger.info("=" * 60)
+            logger.info(f"[BULK_INSERT] Inserting {len(contacts_to_insert)} contacts via PersistenceModule...")
+            logger.info("=" * 60)
+            
             try:
-                activity_success = log_extraction_activity(
-                    candidate_id=self.candidate_id,
-                    employee_id=self.employee_id,
-                    activity_count=successful,
-                    notes=f"Extracted {successful} contacts"
-                )
-                if activity_success:
-                    logger.info("[EXTRACTION] Activity logged successfully")
-                else:
-                    logger.error("[EXTRACTION] Activity logging failed")
+                inserted_count = self.persistence.bulk_insert_contacts(contacts_to_insert)
+                self.metrics.increment_contacts_inserted(inserted_count)
+                logger.info(f"[BULK_INSERT] ✅ Successfully inserted {inserted_count} contacts")
             except Exception as e:
-                logger.error(f"[EXTRACTION] Activity logging exception: {e}", exc_info=True)
+                logger.error(f"[BULK_INSERT] Failed: {e}", exc_info=True)
         else:
-            logger.info("[EXTRACTION] No successful extractions, skipping activity log")
-
-        # ========== SUMMARY ==========
+            logger.info("[BULK_INSERT] No contacts to insert")
+        
+        # Log activity using PersistenceModule (Phase 4)
+        # Only log if contacts were actually inserted (not just extracted)
+        if inserted_count > 0:
+            logger.info("=" * 60)
+            logger.info("[EXTRACTION] Logging activity via PersistenceModule...")
+            
+            try:
+                self.persistence.log_activity(
+                    action="contact_extraction",
+                    details=f"Inserted {inserted_count} contacts from {successful} extracted ({total} threads)",
+                    activity_count=inserted_count  # Use actual inserted count
+                )
+                logger.info("[EXTRACTION] ✅ Activity logged successfully")
+            except Exception as e:
+                logger.error(f"[EXTRACTION] Activity logging failed: {e}", exc_info=True)
+        
+        # End metrics tracking and log summary
+        self.metrics.end_extraction()
+        self.metrics.log_summary()
+        
+        # Summary
         self.extracted_count = successful
         
         logger.info("=" * 70)
-        logger.info("[EXTRACTION] SUMMARY")
+        logger.info("[EXTRACTION] LEGACY SUMMARY (for compatibility)")
         logger.info("=" * 70)
         logger.info(f"   Total threads processed: {total}")
         logger.info(f"   Successful extractions:  {successful}")
@@ -584,26 +734,57 @@ class LinkedInBot:
         logger.info(f"   Errors:                  {errors}")
         logger.info("=" * 70)
         
-        return contacts
+        return contacts_summary
 
     def run(self):
-        """Main execution."""
+        """Main execution with DuckDB tracking (Phase 6)."""
         logger.info("=" * 70)
-        logger.info("[RUN] STARTING BOT")
+        logger.info("[RUN] STARTING BOT (Modular Architecture - Phase 6)")
         logger.info("=" * 70)
         
         try:
+            # Connect to DuckDB and start run tracking
+            self.duckdb.connect()
+            self.current_run_id = self.duckdb.start_run(
+                self.employee_id,
+                self.candidate_id,
+                self.username
+            )
+            logger.info(f"[DUCKDB] Started run {self.current_run_id}")
+            
             self.start_browser()
             self.login()
             self.go_to_messages()
             self.extract_recent_contacts()
             
+            # End run with success status
+            self.duckdb.end_run(self.current_run_id, self.metrics.get_summary(), 'completed')
+            logger.info(f"[DUCKDB] Ended run {self.current_run_id} successfully")
+            
         except Exception as e:
             logger.error(f"[RUN] BOT ERROR: {e}", exc_info=True)
+            # End run with failed status
+            if self.current_run_id:
+                try:
+                    self.duckdb.end_run(self.current_run_id, self.metrics.get_summary(), 'failed')
+                    logger.info(f"[DUCKDB] Ended run {self.current_run_id} with failure")
+                except:
+                    pass
         finally:
-            if self.driver:
+            # Close DuckDB connection
+            try:
+                self.duckdb.close()
+                logger.info("[DUCKDB] Connection closed")
+            except:
+                pass
+            
+            # Use BrowserManager for cleanup
+            if self.browser_manager:
+                self.browser_manager.close_browser()
+                logger.info("[RUN] Browser closed via BrowserManager")
+            elif self.driver:
                 self.driver.quit()
-                logger.info("[RUN] Browser closed")
+                logger.info("[RUN] Browser closed directly")
         
         logger.info("=" * 70)
         logger.info("[RUN] BOT FINISHED")

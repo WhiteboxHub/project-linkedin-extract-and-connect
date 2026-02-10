@@ -1,6 +1,4 @@
+# LinkedIn Contact Extraction Configuration
+# NUM_MESSAGES_TO_PROCESS: Number of LinkedIn message threads to process for contact extraction
+# Set to "all" to process all available threads, or specify a number (e.g., 20)
 NUM_MESSAGES_TO_PROCESS: 20
-MESSAGE: "Hi, I came across your profile and would like to connect with you!"
-
-
-
-#username: custom message

@@ -532,6 +532,198 @@ def insert_contact(full_name, source_email, email, phone, linkedin_id, linkedin_
         logger.info("[INSERT_CONTACT] END")
         logger.info("=" * 60)
 
+
+# ============================================
+# BULK INSERT CONTACTS
+# ============================================
+
+def bulk_insert_contacts(contacts_list):
+    """
+    Bulk insert multiple contacts via API: POST /vendor_contact/bulk
+    
+    Args:
+        contacts_list: List of dicts with contact data
+            Each dict should have:
+            - full_name (required)
+            - source_email (required)
+            - linkedin_id (optional)
+            - linkedin_internal_id (optional)
+            - email (optional)
+            - phone (optional)
+            - company_name (optional)
+            - location (optional)
+    
+    Returns:
+        dict: {
+            'success': bool,
+            'inserted': int,
+            'duplicates': int,
+            'failed': int,
+            'total': int,
+            'failed_contacts': list,
+            'duplicate_contacts': list
+        }
+    """
+    logger.info("=" * 60)
+    logger.info(f"[BULK_INSERT] START - Inserting {len(contacts_list)} contacts")
+    logger.info("=" * 60)
+    
+    try:
+        # Step 1: Load config
+        logger.info("[BULK_INSERT] Step 1: Loading config...")
+        config = get_wbl_config()
+        
+        if not config:
+            logger.error("[BULK_INSERT] FAILED: config is None")
+            return {
+                'success': False,
+                'inserted': 0,
+                'duplicates': 0,
+                'failed': len(contacts_list),
+                'total': len(contacts_list),
+                'error': 'Config not found'
+            }
+        
+        api_url = config.get("API_URL")
+        token = config.get("TOKEN")
+        
+        logger.info(f"[BULK_INSERT] API URL: {api_url}")
+        logger.info(f"[BULK_INSERT] Token present: {bool(token)}")
+        
+        if not api_url or not token:
+            logger.error("[BULK_INSERT] FAILED: API_URL or TOKEN missing")
+            return {
+                'success': False,
+                'inserted': 0,
+                'duplicates': 0,
+                'failed': len(contacts_list),
+                'total': len(contacts_list),
+                'error': 'API credentials missing'
+            }
+        
+        # Step 2: Prepare payload
+        logger.info("[BULK_INSERT] Step 2: Preparing bulk payload...")
+        
+        payload = {
+            "contacts": contacts_list
+        }
+        
+        logger.info(f"[BULK_INSERT] Total contacts in payload: {len(contacts_list)}")
+        
+        # Step 3: Make API request
+        endpoint = f"{api_url}/vendor_contact/bulk"
+        headers = get_api_headers(token)
+        
+        logger.info(f"[BULK_INSERT] Step 3: Calling bulk API...")
+        logger.info(f"[BULK_INSERT] Endpoint: POST {endpoint}")
+        
+        response = requests.post(
+            endpoint,
+            json=payload,
+            headers=headers,
+            timeout=60  # Longer timeout for bulk operations
+        )
+        
+        # Step 4: Handle response
+        logger.info(f"[BULK_INSERT] Step 4: Processing response...")
+        logger.info(f"[BULK_INSERT] Status Code: {response.status_code}")
+        
+        if response.status_code in [200, 201]:
+            result = response.json()
+            logger.info(f"[BULK_INSERT] SUCCESS!")
+            logger.info(f"[BULK_INSERT]   Inserted: {result.get('inserted', 0)}")
+            logger.info(f"[BULK_INSERT]   Duplicates: {result.get('duplicates', 0)}")
+            logger.info(f"[BULK_INSERT]   Failed: {result.get('failed', 0)}")
+            logger.info(f"[BULK_INSERT]   Total: {result.get('total', 0)}")
+            
+            # Log duplicate contact details for debugging
+            duplicate_contacts = result.get('duplicate_contacts', [])
+            if duplicate_contacts:
+                logger.warning(f"[BULK_INSERT] Duplicate contacts detected:")
+                for dup in duplicate_contacts:
+                    logger.warning(f"[BULK_INSERT]   - {dup.get('full_name', 'Unknown')} (LinkedIn ID: {dup.get('linkedin_id', 'N/A')})")
+            
+            # Log failed contact details for debugging
+            failed_contacts = result.get('failed_contacts', [])
+            if failed_contacts:
+                logger.error(f"[BULK_INSERT] Failed contacts:")
+                for fail in failed_contacts:
+                    logger.error(f"[BULK_INSERT]   - {fail.get('full_name', 'Unknown')}: {fail.get('error', 'Unknown error')}")
+            
+            return {
+                'success': True,
+                'inserted': result.get('inserted', 0),
+                'duplicates': result.get('duplicates', 0),
+                'failed': result.get('failed', 0),
+                'total': result.get('total', 0),
+                'failed_contacts': result.get('failed_contacts', []),
+                'duplicate_contacts': result.get('duplicate_contacts', [])
+            }
+        
+        elif response.status_code == 401:
+            logger.error("[BULK_INSERT] FAILED: 401 Unauthorized")
+            logger.error("[BULK_INSERT] Token may have expired. Run 'python setup.py' again.")
+            return {
+                'success': False,
+                'inserted': 0,
+                'duplicates': 0,
+                'failed': len(contacts_list),
+                'total': len(contacts_list),
+                'error': 'Unauthorized - token expired'
+            }
+        
+        else:
+            logger.error(f"[BULK_INSERT] FAILED: Status {response.status_code}")
+            logger.error(f"[BULK_INSERT] Response: {response.text}")
+            return {
+                'success': False,
+                'inserted': 0,
+                'duplicates': 0,
+                'failed': len(contacts_list),
+                'total': len(contacts_list),
+                'error': f'API error: {response.status_code}'
+            }
+    
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"[BULK_INSERT] FAILED: Connection Error")
+        logger.error(f"[BULK_INSERT] Cannot connect to API server: {e}")
+        return {
+            'success': False,
+            'inserted': 0,
+            'duplicates': 0,
+            'failed': len(contacts_list),
+            'total': len(contacts_list),
+            'error': 'Connection error'
+        }
+    
+    except requests.exceptions.Timeout as e:
+        logger.error(f"[BULK_INSERT] FAILED: Timeout")
+        logger.error(f"[BULK_INSERT] Request took too long: {e}")
+        return {
+            'success': False,
+            'inserted': 0,
+            'duplicates': 0,
+            'failed': len(contacts_list),
+            'total': len(contacts_list),
+            'error': 'Request timeout'
+        }
+    
+    except Exception as e:
+        logger.error(f"[BULK_INSERT] FAILED: Unexpected Exception")
+        logger.error(f"[BULK_INSERT] Error: {e}", exc_info=True)
+        return {
+            'success': False,
+            'inserted': 0,
+            'duplicates': 0,
+            'failed': len(contacts_list),
+            'total': len(contacts_list),
+            'error': str(e)
+        }
+    
+    finally:
+        logger.info("[BULK_INSERT] END")
+        logger.info("=" * 60)
+
 # ============================================
 # ACTIVITY LOGGING (API)
 # ============================================
@@ -631,14 +823,3 @@ def log_extraction_activity(candidate_id, employee_id, activity_count, notes=Non
         logger.error(f"[LOG_EXTRACTION] FAILED: {e}", exc_info=True)
         return False
 
-def log_connector_activity(candidate_id, employee_id, activity_count, notes=None):
-    """Log connector activity (job_id=121)."""
-    logger.info(f"[LOG_CONNECTOR] Calling with count={activity_count}")
-    try:
-        config = get_wbl_config()
-        job_id = config.get("CONNECTOR_JOB_ID", 121) if config else 121
-        logger.info(f"[LOG_CONNECTOR] Using job_id={job_id}")
-        return log_activity(job_id, candidate_id, employee_id, activity_count, notes)
-    except Exception as e:
-        logger.error(f"[LOG_CONNECTOR] FAILED: {e}", exc_info=True)
-        return False
