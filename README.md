@@ -2,10 +2,6 @@
 
 > **Automated LinkedIn contact extraction tool with multi-account support, stealth mode, and comprehensive data persistence.**
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/status-production%20ready-success.svg)]()
-[![Tests](https://img.shields.io/badge/tests-42%2F44%20passing-success.svg)]()
-
 ## 🚀 Features
 
 - ✅ **Automated Contact Extraction** - Extract contacts from LinkedIn messages automatically
@@ -425,28 +421,8 @@ uvicorn main:app --reload --port 8000
 - **[README.md](README.md)** - This file (quick start and usage)
 - **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)** - Detailed program explanation
 - **[.env.example](.env.example)** - Environment variable template
-- **Test Files** - Usage examples and verification
 
-## 🧪 Testing
 
-### Run All Tests
-
-```bash
-python scripts/verify_all.py
-```
-
-### Run Specific Phase
-
-```bash
-python test_phase6_1_duckdb_setup.py
-python test_phase7_5_multi_account.py
-```
-
-### Test Coverage
-
-- **42/44 tests passing (95%)**
-- All critical features verified
-- Production ready
 
 ## 🛠️ Advanced Features
 
@@ -455,14 +431,6 @@ python test_phase7_5_multi_account.py
 If LinkedIn changes their UI, update selectors in:
 ```
 linkedin_selectors/selectors.py
-```
-
-### Deployment Check
-
-Before production deployment:
-
-```bash
-python deploy_check.py
 ```
 
 Validates:
@@ -537,28 +505,8 @@ For issues or questions:
 
 1. Check [HOW_IT_WORKS.md](HOW_IT_WORKS.md) for detailed explanations
 2. Review `logs/extraction_debug.log` for error details
-3. Consult test files for usage examples
-4. Verify configuration with `python deploy_check.py`
 
 ## 📜 License
 
 Private project - All rights reserved
 
-## 🎯 Version
-
-**v1.0.0** - Production Ready
-
-**Features:**
-- ✅ All 7 development phases complete
-- ✅ 95% test coverage (42/44 tests passing)
-- ✅ Multi-account automation
-- ✅ DuckDB analytics integration
-- ✅ WBL API integration
-- ✅ Comprehensive error handling
-- ✅ Production verified and deployed
-
-**Last Updated:** 2026-02-09
-
----
-
-**Status:** ✅ Production Ready | **Tests:** 42/44 Passing (95%) | **Maintained:** Active
