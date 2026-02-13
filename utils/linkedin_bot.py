@@ -204,13 +204,16 @@ class LinkedInBot:
                 current_url = self.driver.current_url
                 logger.info(f"[LOGIN] Current URL: {current_url}")
                 
-                # Check for multiple indicators of being logged in
+                
+                # Check for multiple indicators of being logged in (from actual LinkedIn HTML)
                 login_indicators = [
-                    (By.ID, "global-nav"),
-                    (By.CLASS_NAME, "global-nav__content"),
-                    (By.ID, "global-nav-typeahead"),
-                    (By.CLASS_NAME, "feed-identity-module"),
-                    (By.XPATH, "//img[contains(@class, 'global-nav__me-photo')]")
+                    (By.ID, "global-nav"),  # Main header
+                    (By.CLASS_NAME, "global-nav__content"),  # Header content wrapper
+                    (By.ID, "global-nav-search"),  # Search container
+                    (By.ID, "global-nav-typeahead"),  # Search input
+                    (By.CLASS_NAME, "global-nav__me"),  # Me dropdown
+                    (By.CLASS_NAME, "global-nav__me-photo"),  # Profile picture
+                    (By.CLASS_NAME, "global-nav__primary-items"),  # Nav items (Home, Jobs, etc)
                 ]
                 
                 for by, selector in login_indicators:
@@ -224,13 +227,18 @@ class LinkedInBot:
                 
                 if not is_logged_in and "feed" in current_url:
                     # Double check if on feed URL but elements not found yet
-                    logger.info("[LOGIN] On feed URL but indicators missing - waiting...")
-                    time.sleep(5)
+                    logger.info("[LOGIN] On feed URL but indicators missing - waiting longer...")
+                    time.sleep(8)  # Wait longer for page to fully load
+                    
+                    # Try one more time with explicit wait
                     for by, selector in login_indicators:
-                        if self.driver.find_elements(by, selector):
-                            is_logged_in = True
-                            logger.info(f"[LOGIN] Found login indicator after wait: {selector}")
-                            break
+                        try:
+                            if self.driver.find_elements(by, selector):
+                                is_logged_in = True
+                                logger.info(f"[LOGIN] Found login indicator after extended wait: {selector}")
+                                break
+                        except:
+                            continue
                             
             except Exception as e:
                 logger.debug(f"[LOGIN] Check failed: {e}")
@@ -242,31 +250,153 @@ class LinkedInBot:
             # Login required
             logger.info("[LOGIN] Not logged in, performing login...")
             
-            # Check for "Welcome Back" screen (password only)
-            is_welcome_back = False
+            # Check current URL - if still on feed, we might actually be logged in
+            current_url = self.driver.current_url
+            if "feed" in current_url and "login" not in current_url:
+                logger.warning("[LOGIN] Still on feed page but no indicators found - assuming logged in")
+                self.driver.save_screenshot('debug_feed_no_indicators.png')
+                logger.info("[LOGIN] Screenshot saved to debug_feed_no_indicators.png")
+                return
+            
+            # Check for "Welcome Back" screens (multiple scenarios)
+            is_welcome_back_password = False
+            is_account_selection = False
+            
             try:
-                self.driver.find_element(By.ID, "password")
-                try:
-                    self.driver.find_element(By.ID, "username")
-                    logger.info("[LOGIN] Found username field - Standard Login")
-                except:
-                    is_welcome_back = True
-                    logger.info("[LOGIN] Found password but no username - Welcome Back screen detected")
+                # Check for account selection screen (multiple member__profile divs)
+                account_profiles = self.driver.find_elements(By.CLASS_NAME, "member__profile")
+                if len(account_profiles) > 1:
+                    is_account_selection = True
+                    logger.info(f"[LOGIN] Account selection screen detected ({len(account_profiles)} accounts)")
+                elif len(account_profiles) == 1:
+                    # Single account shown - check if password field exists
+                    try:
+                        self.driver.find_element(By.ID, "password")
+                        is_welcome_back_password = True
+                        logger.info("[LOGIN] Welcome Back screen (password-only) detected")
+                    except:
+                        # Profile shown but no password field yet - might need to click
+                        is_account_selection = True
+                        logger.info("[LOGIN] Single account profile found - will click to proceed")
             except:
                 pass
-
-            if not is_welcome_back:
+            
+            # Handle account selection screen
+            if is_account_selection:
+                try:
+                    logger.info("[LOGIN] Account selection screen detected - matching by email...")
+                    
+                    # Get all account profiles
+                    account_profiles = self.driver.find_elements(By.CLASS_NAME, "member__profile")
+                    logger.info(f"[LOGIN] Found {len(account_profiles)} account profiles")
+                    
+                    # Extract username from config (email address)
+                    target_email = self.username.lower()
+                    logger.info(f"[LOGIN] Looking for account matching: {target_email}")
+                    
+                    matched_profile = None
+                    
+                    # Loop through profiles to find matching email
+                    for profile in account_profiles:
+                        try:
+                            # Look for email in profile__handle
+                            email_element = profile.find_element(By.CLASS_NAME, "profile__handle")
+                            email_text = email_element.text.lower()
+                            
+                            # Check if configured email matches (handles partial masking like "g*****@gmail.com")
+                            if target_email in email_text or any(part in email_text for part in target_email.split('@')):
+                                matched_profile = profile
+                                logger.info(f"[LOGIN] ✅ Matched account: {email_text}")
+                                break
+                        except:
+                            continue
+                    
+                    if matched_profile:
+                        logger.info("[LOGIN] Clicking on matched account profile...")
+                        self.human.human_click(self.driver, matched_profile)
+                        self.human.random_pause(2, 3)
+                        
+                        # After clicking, check if password field appears
+                        try:
+                            self.driver.find_element(By.ID, "password")
+                            is_welcome_back_password = True
+                            logger.info("[LOGIN] Password field appeared after account selection")
+                        except:
+                            # Might have logged in directly
+                            current_url = self.driver.current_url
+                            if "feed" in current_url:
+                                logger.info("[LOGIN] Logged in directly after account selection!")
+                                return
+                    else:
+                        logger.warning(f"[LOGIN] ⚠️ Could not find account matching {target_email}")
+                        logger.warning("[LOGIN] Clicking first account as fallback...")
+                        first_profile = self.driver.find_element(By.CLASS_NAME, "member__profile")
+                        self.human.human_click(self.driver, first_profile)
+                        self.human.random_pause(2, 3)
+                        
+                except Exception as e:
+                    logger.warning(f"[LOGIN] Failed to click account profile: {e}")
+            
+            # Handle Welcome Back password-only screen
+            if is_welcome_back_password:
+                logger.info("[LOGIN] Filling password on Welcome Back screen...")
+                try:
+                    password_field = self.wait.until(EC.presence_of_element_located((By.ID, 'password')))
+                    self.human.human_type(password_field, self.password)
+                    
+                    # Click Sign in button
+                    logger.info("[LOGIN] Clicking Sign in...")
+                    submit_button = self.driver.find_element(By.XPATH, "//button[@type='submit']")
+                    self.human.human_click(self.driver, submit_button)
+                    
+                    # Wait for login
+                    for i in range(30):
+                        current_url = self.driver.current_url
+                        if "feed" in current_url and "login" not in current_url:
+                            logger.info("[LOGIN] Login successful via Welcome Back")
+                            return
+                        if "challenge" in current_url or "checkpoint" in current_url:
+                            logger.warning("[LOGIN] VERIFICATION REQUIRED - complete manually")
+                            while "feed" not in self.driver.current_url:
+                                self.human.random_pause(3, 5)
+                            return
+                        self.human.random_pause(1, 2)
+                    
+                    logger.info("[LOGIN] Welcome Back login completed")
+                    return
+                except Exception as e:
+                    logger.error(f"[LOGIN] Failed on Welcome Back screen: {e}")
+                    self.driver.save_screenshot('debug_welcome_back_error.png')
+                    raise
+            
+            
+            # Standard login flow (username + password)
+            if not is_welcome_back_password and not is_account_selection:
                 try:
                     self.driver.find_element(By.ID, "username")
+                    logger.info("[LOGIN] Username field found on current page")
                 except:
                     logger.info("[LOGIN] Navigating to login page...")
                     self.driver.get("https://www.linkedin.com/login")
-                    self.human.random_pause(1, 2)
+                    self.human.random_pause(2, 3)  # Wait longer after navigation
+                    
+                    # Check if we got redirected (might already be logged in)
+                    new_url = self.driver.current_url
+                    logger.info(f"[LOGIN] After navigation, URL is: {new_url}")
+                    
+                    if "feed" in new_url:
+                        logger.info("[LOGIN] Redirected to feed - already logged in!")
+                        return
 
                 # Fill username if not welcome back
                 logger.info("[LOGIN] Filling username...")
-                username_field = self.wait.until(EC.presence_of_element_located((By.ID, 'username')))
-                self.human.human_type(username_field, self.username)
+                try:
+                    username_field = self.wait.until(EC.presence_of_element_located((By.ID, 'username')))
+                    self.human.human_type(username_field, self.username)
+                except Exception as e:
+                    logger.error(f"[LOGIN] Failed to find/fill username field: {e}")
+                    self.driver.save_screenshot('debug_login_username_error.png')
+                    raise
             
             # Fill password (common for both)
             logger.info("[LOGIN] Filling password...")
