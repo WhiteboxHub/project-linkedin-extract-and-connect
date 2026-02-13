@@ -198,16 +198,40 @@ class LinkedInBot:
             self.driver.get("https://www.linkedin.com/feed/")
             time.sleep(5)
             
-            # Check if logged in
+            # Check if logged in (more robust)
             is_logged_in = False
             try:
                 current_url = self.driver.current_url
                 logger.info(f"[LOGIN] Current URL: {current_url}")
                 
-                if "feed" in current_url and "login" not in current_url:
-                    self.driver.find_element(By.ID, "global-nav")
-                    is_logged_in = True
-                    logger.info("[LOGIN] Found global-nav - user is logged in")
+                # Check for multiple indicators of being logged in
+                login_indicators = [
+                    (By.ID, "global-nav"),
+                    (By.CLASS_NAME, "global-nav__content"),
+                    (By.ID, "global-nav-typeahead"),
+                    (By.CLASS_NAME, "feed-identity-module"),
+                    (By.XPATH, "//img[contains(@class, 'global-nav__me-photo')]")
+                ]
+                
+                for by, selector in login_indicators:
+                    try:
+                        if self.driver.find_elements(by, selector):
+                            is_logged_in = True
+                            logger.info(f"[LOGIN] Found login indicator: {selector}")
+                            break
+                    except:
+                        continue
+                
+                if not is_logged_in and "feed" in current_url:
+                    # Double check if on feed URL but elements not found yet
+                    logger.info("[LOGIN] On feed URL but indicators missing - waiting...")
+                    time.sleep(5)
+                    for by, selector in login_indicators:
+                        if self.driver.find_elements(by, selector):
+                            is_logged_in = True
+                            logger.info(f"[LOGIN] Found login indicator after wait: {selector}")
+                            break
+                            
             except Exception as e:
                 logger.debug(f"[LOGIN] Check failed: {e}")
 
@@ -218,20 +242,35 @@ class LinkedInBot:
             # Login required
             logger.info("[LOGIN] Not logged in, performing login...")
             
+            # Check for "Welcome Back" screen (password only)
+            is_welcome_back = False
             try:
-                self.driver.find_element(By.ID, "username")
-                logger.info("[LOGIN] Found username field on current page")
+                self.driver.find_element(By.ID, "password")
+                try:
+                    self.driver.find_element(By.ID, "username")
+                    logger.info("[LOGIN] Found username field - Standard Login")
+                except:
+                    is_welcome_back = True
+                    logger.info("[LOGIN] Found password but no username - Welcome Back screen detected")
             except:
-                logger.info("[LOGIN] Navigating to login page...")
-                self.driver.get("https://www.linkedin.com/login")
-                self.human.random_pause(1, 2)  # Natural pause after navigation
+                pass
+
+            if not is_welcome_back:
+                try:
+                    self.driver.find_element(By.ID, "username")
+                except:
+                    logger.info("[LOGIN] Navigating to login page...")
+                    self.driver.get("https://www.linkedin.com/login")
+                    self.human.random_pause(1, 2)
+
+                # Fill username if not welcome back
+                logger.info("[LOGIN] Filling username...")
+                username_field = self.wait.until(EC.presence_of_element_located((By.ID, 'username')))
+                self.human.human_type(username_field, self.username)
             
-            # Fill credentials
-            logger.info("[LOGIN] Filling credentials...")
-            username_field = self.wait.until(EC.presence_of_element_located((By.ID, 'username')))
-            self.human.human_type(username_field, self.username)
-            
-            password_field = self.driver.find_element(By.ID, 'password')
+            # Fill password (common for both)
+            logger.info("[LOGIN] Filling password...")
+            password_field = self.wait.until(EC.presence_of_element_located((By.ID, 'password')))
             self.human.human_type(password_field, self.password)
             
             logger.info("[LOGIN] Clicking submit...")
