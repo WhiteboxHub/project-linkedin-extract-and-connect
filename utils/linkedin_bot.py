@@ -50,13 +50,14 @@ NUM_MESSAGES_TO_PROCESS = config_data.get("NUM_MESSAGES_TO_PROCESS", "all")
 class LinkedInBot:
     """LinkedIn Contact Extraction Bot with Full Debug Logging."""
     
-    def __init__(self, username, password, chrome_profile, employee_id, candidate_id):
+    def __init__(self, username, password, chrome_profile, employee_id, candidate_id, proxy=None):
         # Credentials
         self.username = username
         self.password = password
         self.chrome_profile = chrome_profile
         self.employee_id = employee_id
         self.candidate_id = candidate_id
+        self.proxy = proxy
         
         # Module initialization (driver/wait set in start_browser)
         self.browser_manager = None
@@ -89,10 +90,29 @@ class LinkedInBot:
         logger.info(f"   Chrome Profile: {chrome_profile}")
         logger.info(f"   Employee ID: {employee_id}")
         logger.info(f"   Candidate ID: {candidate_id}")
+        if self.proxy:
+            logger.info(f"   Proxy: {self.proxy}")
         logger.info(f"   Messages to process: {self.num_messages}")
         logger.info(f"   Max contacts per run: {self.max_contacts}")
         logger.info(f"   Thread delay range: {self.thread_delay_range[0]}-{self.thread_delay_range[1]}ms")
         logger.info("=" * 60)
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures cleanup."""
+        self.cleanup()
+
+    def cleanup(self):
+        """Close browser and release resources."""
+        if self.browser_manager:
+            try:
+                self.browser_manager.close_browser()
+                logger.info("[CLEANUP] Browser closed")
+            except Exception as e:
+                logger.warning(f"[CLEANUP] Error closing browser: {e}")
 
     def start_browser(self):
         """Start browser using BrowserManager (Phase 4)."""
@@ -102,7 +122,8 @@ class LinkedInBot:
             # Initialize BrowserManager
             self.browser_manager = BrowserManager(
                 chrome_profile=self.chrome_profile,
-                headless=False
+                headless=False,
+                proxy=self.proxy
             )
             
             # Start browser
@@ -386,10 +407,11 @@ class LinkedInBot:
         return None
 
     def _safe_get_text(self, selectors):
-        """Try selectors to get text."""
+        """Try selectors to get text (supports CSS and XPath)."""
         for sel in selectors:
             try:
-                el = self.driver.find_element(By.CSS_SELECTOR, sel)
+                by_type = By.XPATH if sel.startswith("//") else By.CSS_SELECTOR
+                el = self.driver.find_element(by_type, sel)
                 text = el.text.strip()
                 if text:
                     logger.debug(f"[GET_TEXT] Found with '{sel}': {text[:50]}")
@@ -449,9 +471,14 @@ class LinkedInBot:
         try:
             # Extract name
             full_name = self._safe_get_text([
+                "//h1[contains(@class, 'break-words') and contains(@class, 'inline')]", # User specific
+                "//h1[contains(@class, 'v-align-middle')]", # User specific
                 "h1.text-heading-xlarge",
                 ".pv-top-card h1",
-                "h1.inline"
+                "h1.inline",
+                "//h1[contains(@class, 'text-heading-xlarge')]",
+                "//h1[contains(@class, 'break-words')]",
+                "//h1"  # Fallback to any h1
             ])
             
             if not full_name or full_name == "LinkedIn Member":
@@ -499,7 +526,8 @@ class LinkedInBot:
                 "company_name": company,
                 "location": location,
                 "job_source": "Bot Linkedin Message Extraction",
-                "profile_url": profile_url
+                "profile_url": profile_url,
+                "extraction_date": datetime.now().strftime("%Y-%m-%d")
             }
             
         except Exception as e:
@@ -767,24 +795,20 @@ class LinkedInBot:
             if self.current_run_id:
                 try:
                     self.duckdb.end_run(self.current_run_id, self.metrics.get_summary(), 'failed')
-                    logger.info(f"[DUCKDB] Ended run {self.current_run_id} with failure")
                 except:
                     pass
+            raise  # Re-raise to let MultiAccountManager know it failed
+            
         finally:
+            # CRITICAL: Always close browser
+            self.cleanup()
+            
             # Close DuckDB connection
             try:
                 self.duckdb.close()
                 logger.info("[DUCKDB] Connection closed")
             except:
                 pass
-            
-            # Use BrowserManager for cleanup
-            if self.browser_manager:
-                self.browser_manager.close_browser()
-                logger.info("[RUN] Browser closed via BrowserManager")
-            elif self.driver:
-                self.driver.quit()
-                logger.info("[RUN] Browser closed directly")
         
         logger.info("=" * 70)
         logger.info("[RUN] BOT FINISHED")

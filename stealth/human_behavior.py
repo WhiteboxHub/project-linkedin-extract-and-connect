@@ -182,15 +182,17 @@ class HumanBehavior:
         self,
         driver: uc.Chrome,
         direction: str = "down",
-        amount: Optional[int] = None
+        amount: Optional[int] = None,
+        element: Optional[WebElement] = None
     ) -> None:
         """
-        Scroll with natural patterns.
+        Scroll with natural patterns (window or specific element).
         
         Args:
             driver: Chrome driver instance
             direction: "up" or "down"
             amount: Scroll amount in pixels (random if None)
+            element: Optional element to scroll (default: window)
         """
         try:
             if amount is None:
@@ -200,13 +202,16 @@ class HumanBehavior:
             # Negative for up, positive for down
             scroll_amount = amount if direction == "down" else -amount
             
-            logger.debug(f"Scrolling {direction} by {amount}px")
+            logger.debug(f"Scrolling {direction} by {amount}px {'(element)' if element else '(window)'}")
             
             # Smooth scroll with easing
             steps = random.randint(5, 10)
             for i in range(steps):
                 step_amount = scroll_amount // steps
-                driver.execute_script(f"window.scrollBy(0, {step_amount});")
+                if element:
+                    driver.execute_script("arguments[0].scrollBy(0, arguments[1]);", element, step_amount)
+                else:
+                    driver.execute_script(f"window.scrollBy(0, {step_amount});")
                 time.sleep(get_scroll_delay() / steps)
             
             # Pause after scrolling

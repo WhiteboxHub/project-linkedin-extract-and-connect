@@ -211,7 +211,8 @@ def release_profile_lock(profile_path: str) -> None:
 def setup_undetected_chrome(
     chrome_profile_name: str,
     headless: bool = False,
-    version_main: Optional[int] = None
+    version_main: Optional[int] = None,
+    proxy: Optional[str] = None
 ) -> Tuple[uc.Chrome, WebDriverWait]:
     """
     Setup undetected ChromeDriver with profile safety checks.
@@ -220,6 +221,7 @@ def setup_undetected_chrome(
         chrome_profile_name: Name of Chrome profile to use
         headless: Whether to run in headless mode (not recommended for stealth)
         version_main: Chrome major version (auto-detected if None)
+        proxy: Optional proxy string "ip:port"
         
     Returns:
         Tuple of (driver, wait) objects
@@ -298,6 +300,12 @@ def setup_undetected_chrome(
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        
+        # Proxy Support (added for Phase 7.5 scalability)
+        if proxy:
+            logger.info(f"Using Proxy: {proxy}")
+            options.add_argument(f'--proxy-server={proxy}')
+
         
         # Headless mode (not recommended for stealth)
         if headless:

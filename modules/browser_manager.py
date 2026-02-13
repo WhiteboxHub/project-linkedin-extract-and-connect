@@ -35,16 +35,19 @@ class BrowserManager:
     - Cleanup on shutdown
     """
     
-    def __init__(self, chrome_profile: str, headless: bool = False):
+
+    def __init__(self, chrome_profile: str, headless: bool = False, proxy: Optional[str] = None):
         """
         Initialize browser manager.
         
         Args:
             chrome_profile: Chrome profile name to use
             headless: Whether to run in headless mode
+            proxy: Optional proxy string "ip:port"
         """
         self.chrome_profile = chrome_profile
         self.headless = headless
+        self.proxy = proxy
         self.driver: Optional[uc.Chrome] = None
         self.wait: Optional[WebDriverWait] = None
         self._is_initialized = False
@@ -52,6 +55,8 @@ class BrowserManager:
         self._max_restarts = 3
         
         logger.info(f"BrowserManager initialized for profile: {chrome_profile}")
+        if self.proxy:
+            logger.info(f"Proxy configured: {self.proxy}")
     
     def start_browser(self) -> Tuple[uc.Chrome, WebDriverWait]:
         """
@@ -77,6 +82,7 @@ class BrowserManager:
             self.driver, self.wait = setup_undetected_chrome(
                 chrome_profile_name=self.chrome_profile,
                 headless=self.headless,
+                proxy=self.proxy
             )
             
             # Apply fingerprint randomization
@@ -90,6 +96,7 @@ class BrowserManager:
         except Exception as e:
             logger.error(f"Failed to start browser: {e}")
             raise BrowserException(f"Browser startup failed: {e}")
+
     
     def restart_browser(self) -> Tuple[uc.Chrome, WebDriverWait]:
         """

@@ -445,7 +445,8 @@ def insert_contact(full_name, source_email, email, phone, linkedin_id, linkedin_
             "full_name": full_name,
             "source_email": source_email,
             "linkedin_id": linkedin_id,
-            "linkedin_internal_id": linkedin_internal_id
+            "linkedin_internal_id": linkedin_internal_id,
+            "extraction_date": datetime.now().strftime("%Y-%m-%d")
         }
         
         # Add optional fields

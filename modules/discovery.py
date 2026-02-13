@@ -109,8 +109,13 @@ class DiscoveryModule:
                     logger.info(f"Loaded {len(threads)} threads (target: {max_threads})")
                     break
                 
-                # Scroll down with human-like behavior
-                self.human.random_scroll(self.driver, direction="down", amount=None)
+                # Try to click "Load more" button first
+                clicked_load_more = self._click_load_more()
+                
+                if not clicked_load_more:
+                    # Scroll down with human-like behavior (scroll container!)
+                    self.human.random_scroll(self.driver, direction="down", amount=None, element=container)
+                
                 self.human.random_pause(1, 2)
                 
                 # Check if we reached the bottom
@@ -118,7 +123,7 @@ class DiscoveryModule:
                     "return arguments[0].scrollHeight", container
                 )
                 
-                if new_height == last_height:
+                if new_height == last_height and not clicked_load_more:
                     logger.info(f"Reached bottom after {scroll_count + 1} scrolls")
                     break
                 
@@ -130,6 +135,34 @@ class DiscoveryModule:
         except Exception as e:
             logger.error(f"Failed to load threads: {e}")
             raise NavigationException(f"Thread loading failed: {e}")
+
+    def _click_load_more(self) -> bool:
+        """
+        Check for and click 'Load more conversations' button.
+        Returns: True if clicked, False otherwise.
+        """
+        try:
+            selectors = [
+                "//button[contains(., 'Load more conversations')]",
+                "//span[contains(text(), 'Load more conversations')]/parent::button",
+                "//button[contains(@class, 'artdeco-button') and contains(., 'Load more')]"
+            ]
+            
+            for selector in selectors:
+                try:
+                    btn = self.driver.find_element(By.XPATH, selector)
+                    if btn.is_displayed():
+                        logger.info("Found 'Load more' button - clicking...")
+                        self.human.move_to_element(self.driver, btn) # Move to it first
+                        self.driver.execute_script("arguments[0].click();", btn) # Safe click
+                        self.human.random_pause(2, 3) # Wait for load
+                        return True
+                except:
+                    continue
+            return False
+        except Exception as e:
+            logger.debug(f"Error checking load more button: {e}")
+            return False
     
     def _find_message_container(self) -> Optional[WebElement]:
         """
@@ -170,6 +203,9 @@ class DiscoveryModule:
                 "//div[contains(@class, 'msg-conversations-container__convo-item-link')]",
                 "//li[contains(@class, 'msg-conversation-listitem')]",
                 "//div[contains(@class, 'msg-conversation-card')]",
+                "//div[contains(@class, 'msg-conversation-listitem__link')]", # From user HTML
+                "//div[contains(@class, 'msg-selectable-entity')]",           # Backup: clickable row
+                "//li[contains(@class, 'msg-conversation-listitem')]"       # Redundant but safe
             ]
             
             for selector in selectors:
