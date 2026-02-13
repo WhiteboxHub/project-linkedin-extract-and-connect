@@ -638,6 +638,29 @@ class LinkedInBot:
     def _extract_from_profile_page(self, thread_num, profile_url):
         """Extract contact data from profile page (Phase 4.2)."""
         try:
+            # Wait for profile page to load (critical for internal ID URLs)
+            logger.info(f"[THREAD {thread_num}] Waiting for profile page to load...")
+            
+            # Verify we're on a profile page
+            current_url = self.driver.current_url
+            if "/in/" not in current_url:
+                logger.warning(f"[THREAD {thread_num}] Not on profile page: {current_url}")
+                return None
+            
+            # Wait for page to render (internal IDs take longer)
+            time.sleep(4)  # Give page time to fully render
+            
+            # Wait for name element to be present
+            try:
+                self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
+                logger.debug(f"[THREAD {thread_num}] Profile page loaded")
+            except:
+                logger.warning(f"[THREAD {thread_num}] Timeout waiting for profile page")
+                # Take screenshot for debugging
+                self.driver.save_screenshot(f'debug_profile_load_thread_{thread_num}.png')
+                logger.info(f"[THREAD {thread_num}] Screenshot saved for debugging")
+            
+            
             # Extract name
             full_name = self._safe_get_text([
                 "//h1[contains(@class, 'break-words') and contains(@class, 'inline')]", # User specific
