@@ -31,6 +31,13 @@ from utils.metrics import ExtractionMetrics
 # Import Phase 6 DuckDB
 from utils.duckdb_manager import DuckDBManager
 
+# Import centralized selector system
+from linkedin_selectors.helpers import (
+    find_element_with_fallback,
+    get_text_with_fallback,
+    click_element_with_fallback
+)
+
 logger = logging.getLogger(__name__)
 
 # Load config.yaml
@@ -472,29 +479,19 @@ class LinkedInBot:
         pass
 
     def _extract_contact_modal(self):
-        """Extract email, phone from contact modal."""
+        """Extract email, phone from contact modal using centralized selector system."""
         info = {"email": None, "phone": None, "public_linkedin": None}
         
         logger.debug("[MODAL] Attempting to open contact info modal...")
         
         try:
-            # Click contact info
-            clicked = False
-            selectors = [
-                "//a[@id='top-card-text-details-contact-info']", 
-                "//a[contains(@href, '/overlay/contact-info/')]"
-            ]
-            
-            for sel in selectors:
-                try:
-                    btn = self.driver.find_element(By.XPATH, sel)
-                    if btn.is_displayed():
-                        self.human.human_click(self.driver, btn)  # Use human click
-                        clicked = True
-                        logger.debug(f"[MODAL] Clicked contact info button: {sel}")
-                        break
-                except:
-                    continue
+            # Click contact info button using centralized selector
+            clicked = click_element_with_fallback(
+                self.driver,
+                category="profile",
+                name="contact_info_link",
+                timeout=5
+            )
             
             if not clicked:
                 logger.debug("[MODAL] Contact info button not found")
@@ -502,45 +499,90 @@ class LinkedInBot:
             
             self.human.random_pause(2, 3)  # Wait for modal to open
             
-            # Wait for modal
-            try:
-                modal = self.wait.until(EC.presence_of_element_located((By.XPATH, "//div[@role='dialog']")))
-                logger.debug("[MODAL] Modal found")
-            except:
+            # Wait for modal using centralized selector
+            modal = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="dialog",
+                timeout=5
+            )
+            
+            if not modal:
                 logger.debug("[MODAL] Modal not found after wait")
                 return info
-
-            # Email
-            try:
-                el = modal.find_element(By.XPATH, "//a[contains(@href, 'mailto:')]")
-                info['email'] = el.text.strip()
-                logger.debug(f"[MODAL] Found email: {info['email']}")
-            except:
+            
+            logger.debug("[MODAL] Modal found")
+            
+            # Extract email using centralized selector
+            email_element = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="email",
+                parent=modal,
+                timeout=0
+            )
+            
+            if email_element:
+                try:
+                    email_text = email_element.text.strip() or email_element.get_attribute('href').replace('mailto:', '')
+                    if email_text and '@' in email_text:
+                        info['email'] = email_text
+                        logger.debug(f"[MODAL] Found email: {info['email']}")
+                except:
+                    pass
+            
+            if not info['email']:
                 logger.debug("[MODAL] No email found")
-
-            # Phone
-            try:
-                el = modal.find_element(By.XPATH, "//section[.//h3[text()='Phone']]//span[@class='t-14 t-black t-normal']")
-                info['phone'] = el.text.strip()
-                logger.debug(f"[MODAL] Found phone: {info['phone']}")
-            except:
+            
+            # Extract phone using centralized selector
+            phone_element = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="phone",
+                parent=modal,
+                timeout=0
+            )
+            
+            if phone_element:
+                try:
+                    phone_text = phone_element.text.strip()
+                    if phone_text and ('+' in phone_text or len(phone_text) >= 10):
+                        info['phone'] = phone_text
+                        logger.debug(f"[MODAL] Found phone: {info['phone']}")
+                except:
+                    pass
+            
+            if not info['phone']:
                 logger.debug("[MODAL] No phone found")
-
-            # Profile URL
-            try:
-                el = modal.find_element(By.XPATH, "//a[contains(@href, 'linkedin.com/in/')]")
-                info['public_linkedin'] = el.get_attribute("href")
-                logger.debug(f"[MODAL] Found profile URL: {info['public_linkedin']}")
-            except:
-                logger.debug("[MODAL] No profile URL found")
-
-            # Close modal
-            try:
-                btn = self.driver.find_element(By.XPATH, "//button[@aria-label='Dismiss']")
-                self.human.human_click(self.driver, btn)  # Use human click
+            
+            # Extract profile URL using centralized selector
+            profile_element = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="linkedin_profile",
+                parent=modal,
+                timeout=0
+            )
+            
+            if profile_element:
+                try:
+                    info['public_linkedin'] = profile_element.get_attribute("href")
+                    logger.debug(f"[MODAL] Found profile URL: {info['public_linkedin']}")
+                except:
+                    pass
+            
+            # Close modal using centralized selector
+            close_clicked = click_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="dismiss_button",
+                timeout=2
+            )
+            
+            if close_clicked:
                 logger.debug("[MODAL] Modal closed")
-                self.human.random_pause(0.5, 1)  # Brief pause after closing
-            except:
+                self.human.random_pause(0.5, 1)
+            else:
                 logger.debug("[MODAL] Could not close modal")
 
         except Exception as e:
@@ -549,26 +591,29 @@ class LinkedInBot:
         return info
 
     def _extract_company(self):
-        """Extract company name."""
+        """Extract company name using centralized selector system."""
         logger.debug("[COMPANY] Attempting to extract company...")
         
-        try:
-            el = self.driver.find_element(
-                By.XPATH,
-                "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"
-            )
-            company = el.text.strip()
+        # Try centralized selector system first
+        company = get_text_with_fallback(
+            self.driver,
+            category="profile",
+            name="company_text",
+            timeout=0
+        )
+        
+        if company and company != "LinkedIn Member":
             logger.debug(f"[COMPANY] Found: {company}")
             return company
-        except:
-            pass
         
+        # Try extracting from aria-label as fallback
         try:
             btn = self.driver.find_element(By.XPATH, "//button[contains(@aria-label, 'Current company:')]")
             label = btn.get_attribute('aria-label')
             company = label.replace('Current company:', '').split('.')[0].strip()
-            logger.debug(f"[COMPANY] Found from aria-label: {company}")
-            return company
+            if company:
+                logger.debug(f"[COMPANY] Found from aria-label: {company}")
+                return company
         except:
             pass
         
@@ -650,10 +695,16 @@ class LinkedInBot:
             # Wait for page to render (internal IDs take longer)
             time.sleep(4)  # Give page time to fully render
             
-            # Wait for name element to be present
+            # Wait for name element to be present (h1 OR h2 - LinkedIn A/B tests different structures)
             try:
-                self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
-                logger.debug(f"[THREAD {thread_num}] Profile page loaded")
+                # Try h1 first (old structure)
+                try:
+                    self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
+                    logger.debug(f"[THREAD {thread_num}] Profile page loaded (h1 found)")
+                except:
+                    # Try h2 (new structure)
+                    self.wait.until(EC.presence_of_element_located((By.TAG_NAME, "h2")))
+                    logger.debug(f"[THREAD {thread_num}] Profile page loaded (h2 found)")
             except:
                 logger.warning(f"[THREAD {thread_num}] Timeout waiting for profile page")
                 # Take screenshot for debugging
@@ -661,17 +712,13 @@ class LinkedInBot:
                 logger.info(f"[THREAD {thread_num}] Screenshot saved for debugging")
             
             
-            # Extract name
-            full_name = self._safe_get_text([
-                "//h1[contains(@class, 'break-words') and contains(@class, 'inline')]", # User specific
-                "//h1[contains(@class, 'v-align-middle')]", # User specific
-                "h1.text-heading-xlarge",
-                ".pv-top-card h1",
-                "h1.inline",
-                "//h1[contains(@class, 'text-heading-xlarge')]",
-                "//h1[contains(@class, 'break-words')]",
-                "//h1"  # Fallback to any h1
-            ])
+            # Extract name using centralized selector system
+            full_name = get_text_with_fallback(
+                self.driver,
+                category="profile",
+                name="name",
+                timeout=0
+            )
             
             if not full_name or full_name == "LinkedIn Member":
                 logger.warning(f"[THREAD {thread_num}] Invalid name '{full_name}'")
@@ -683,11 +730,13 @@ class LinkedInBot:
             company = self._extract_company()
             logger.info(f"[THREAD {thread_num}] Company: {company or 'N/A'}")
             
-            # Extract location
-            location = self._safe_get_text([
-                "span.text-body-small.inline.t-black--light.break-words",
-                ".pv-top-card__location"
-            ])
+            # Extract location using centralized selector system
+            location = get_text_with_fallback(
+                self.driver,
+                category="profile",
+                name="location",
+                timeout=0
+            )
             logger.info(f"[THREAD {thread_num}] Location: {location or 'N/A'}")
             
             # Extract contact info

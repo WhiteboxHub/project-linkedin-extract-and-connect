@@ -19,6 +19,12 @@ from stealth import HumanBehavior
 from utils.retry import retry_on_timeout, retry_on_stale_element
 from utils.exceptions import NavigationException
 
+# Import centralized selector system
+from linkedin_selectors.helpers import (
+    find_element_with_fallback,
+    find_elements_with_fallback
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,81 +146,79 @@ class DiscoveryModule:
         """
         Check for and click 'Load more conversations' button.
         Returns: True if clicked, False otherwise.
+        Click 'Load more' button if present.
+        
+        Returns:
+            True if button was clicked, False otherwise
         """
         try:
-            selectors = [
-                "//button[contains(., 'Load more conversations')]",
-                "//span[contains(text(), 'Load more conversations')]/parent::button",
-                "//button[contains(@class, 'artdeco-button') and contains(., 'Load more')]"
-            ]
+            # Use centralized selector
+            button = find_element_with_fallback(
+                self.driver,
+                category="messaging",
+                name="load_more_button",
+                timeout=2
+            )
             
-            for selector in selectors:
-                try:
-                    btn = self.driver.find_element(By.XPATH, selector)
-                    if btn.is_displayed():
-                        logger.info("Found 'Load more' button - clicking...")
-                        self.human.move_to_element(self.driver, btn) # Move to it first
-                        self.driver.execute_script("arguments[0].click();", btn) # Safe click
-                        self.human.random_pause(2, 3) # Wait for load
-                        return True
-                except:
-                    continue
+            if button:
+                self.human.human_click(self.driver, button)
+                self.human.random_pause(2, 3)
+                logger.debug("Clicked 'Load more' button")
+                return True
+            
             return False
+            
         except Exception as e:
-            logger.debug(f"Error checking load more button: {e}")
+            logger.debug(f"No 'Load more' button found: {e}")
             return False
     
     def _find_message_container(self) -> Optional[WebElement]:
         """
-        Find the message container element.
+        Find message container element using centralized selectors.
         
         Returns:
-            Container element or None if not found
+            Container WebElement or None
         """
-        selectors = [
-            ".msg-conversations-container__conversations-list",
-            "ul.msg-conversations-container__conversations-list",
-            "[class*='msg-conversations-container']",
-        ]
-        
-        for selector in selectors:
-            try:
-                container = self.driver.find_element(By.CSS_SELECTOR, selector)
-                if container:
-                    logger.debug(f"Found container with selector: {selector}")
-                    return container
-            except NoSuchElementException:
-                continue
-        
-        logger.warning("Message container not found with any selector")
-        return None
+        try:
+            container = find_element_with_fallback(
+                self.driver,
+                category="messaging",
+                name="thread_container",
+                timeout=5
+            )
+            
+            if container:
+                logger.debug("Found message container")
+                return container
+            
+            logger.warning("Message container not found")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error finding message container: {e}")
+            return None
     
     @retry_on_stale_element(max_retries=3)
     def get_thread_elements(self) -> List[WebElement]:
         """
-        Get all thread elements currently loaded.
+        Get all thread elements using centralized selectors.
         
         Returns:
             List of thread WebElements
         """
         try:
-            # Try multiple selectors
-            selectors = [
-                "//div[contains(@class, 'msg-conversations-container__convo-item-link')]",
-                "//li[contains(@class, 'msg-conversation-listitem')]",
-                "//div[contains(@class, 'msg-conversation-card')]",
-                "//div[contains(@class, 'msg-conversation-listitem__link')]", # From user HTML
-                "//div[contains(@class, 'msg-selectable-entity')]",           # Backup: clickable row
-                "//li[contains(@class, 'msg-conversation-listitem')]"       # Redundant but safe
-            ]
+            # Use centralized selector system
+            threads = find_elements_with_fallback(
+                self.driver,
+                category="messaging",
+                name="thread_list"
+            )
             
-            for selector in selectors:
-                threads = self.driver.find_elements(By.XPATH, selector)
-                if threads:
-                    logger.debug(f"Found {len(threads)} threads with selector: {selector}")
-                    return threads
+            if threads:
+                logger.debug(f"Found {len(threads)} threads")
+                return threads
             
-            logger.warning("No threads found with any selector")
+            logger.warning("No threads found")
             return []
             
         except Exception as e:

@@ -19,6 +19,13 @@ from stealth import HumanBehavior
 from utils.retry import retry_on_stale_element, retry_on_timeout
 from utils.exceptions import ExtractionException
 
+# Import centralized selector system
+from linkedin_selectors.helpers import (
+    find_element_with_fallback,
+    get_text_with_fallback,
+    click_element_with_fallback
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,7 +79,7 @@ class WorkflowModule:
     @retry_on_timeout(max_retries=2)
     def open_contact_modal(self) -> bool:
         """
-        Open contact information modal.
+        Open contact information modal using centralized selectors.
         
         Returns:
             True if modal opened successfully, False otherwise
@@ -83,31 +90,18 @@ class WorkflowModule:
         try:
             logger.debug("Opening contact modal...")
             
-            # Find and click contact info button
-            button_selectors = [
-                "//button[contains(@aria-label, 'view') and contains(@aria-label, 'profile')]",
-                "//button[contains(@class, 'msg-thread__link-to-profile')]",
-                "//a[contains(@class, 'msg-thread__link-to-profile')]",
-            ]
+            # Use centralized selector to click view profile button
+            clicked = click_element_with_fallback(
+                self.driver,
+                category="messaging",
+                name="view_profile_button",
+                timeout=5
+            )
             
-            button = None
-            for selector in button_selectors:
-                try:
-                    button = self.wait.until(
-                        EC.presence_of_element_located((By.XPATH, selector))
-                    )
-                    if button:
-                        logger.debug(f"Found button with selector: {selector}")
-                        break
-                except TimeoutException:
-                    continue
-            
-            if not button:
+            if not clicked:
                 logger.warning("Contact info button not found")
                 return False
             
-            # Click button
-            self.human.human_click(self.driver, button)
             self.human.random_pause(2, 3)
             
             # Verify modal opened
@@ -125,26 +119,19 @@ class WorkflowModule:
     
     def _verify_modal_opened(self) -> bool:
         """
-        Verify that contact modal is open.
+        Verify that contact modal is open using centralized selectors.
         
         Returns:
             True if modal is open, False otherwise
         """
-        modal_selectors = [
-            "//div[contains(@class, 'artdeco-modal')]",
-            "//div[contains(@role, 'dialog')]",
-            "//section[contains(@class, 'pv-contact-info')]",
-        ]
+        modal = find_element_with_fallback(
+            self.driver,
+            category="contact_modal",
+            name="dialog",
+            timeout=2
+        )
         
-        for selector in modal_selectors:
-            try:
-                modal = self.driver.find_element(By.XPATH, selector)
-                if modal and modal.is_displayed():
-                    return True
-            except NoSuchElementException:
-                continue
-        
-        return False
+        return modal is not None and modal.is_displayed()
     
     def extract_contact_info(self) -> Dict[str, Any]:
         """
@@ -175,23 +162,18 @@ class WorkflowModule:
             raise ExtractionException(f"Contact extraction failed: {e}")
     
     def _extract_name(self) -> Optional[str]:
-        """Extract contact name."""
+        """Extract contact name using centralized selectors."""
         try:
-            selectors = [
-                "//h1[contains(@class, 'text-heading-xlarge')]",
-                "//div[contains(@class, 'pv-text-details__left-panel')]//h1",
-                "//h2[contains(@class, 'msg-thread__title')]",
-            ]
+            name = get_text_with_fallback(
+                self.driver,
+                category="profile",
+                name="name",
+                timeout=0
+            )
             
-            for selector in selectors:
-                try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    name = element.text.strip()
-                    if name:
-                        logger.debug(f"Found name: {name}")
-                        return name
-                except NoSuchElementException:
-                    continue
+            if name:
+                logger.debug(f"Found name: {name}")
+                return name
             
             logger.warning("Name not found")
             return None
@@ -201,22 +183,20 @@ class WorkflowModule:
             return None
     
     def _extract_email(self) -> Optional[str]:
-        """Extract email address."""
+        """Extract email address using centralized selectors."""
         try:
-            selectors = [
-                "//section[contains(@class, 'pv-contact-info__contact-type')]//a[contains(@href, 'mailto:')]",
-                "//a[contains(@href, 'mailto:')]",
-            ]
+            element = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="email",
+                timeout=0
+            )
             
-            for selector in selectors:
-                try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    email = element.get_attribute('href').replace('mailto:', '').strip()
-                    if email and '@' in email:
-                        logger.debug(f"Found email: {email}")
-                        return email
-                except NoSuchElementException:
-                    continue
+            if element:
+                email = element.get_attribute('href').replace('mailto:', '').strip()
+                if email and '@' in email:
+                    logger.debug(f"Found email: {email}")
+                    return email
             
             logger.debug("Email not found")
             return None
@@ -226,24 +206,21 @@ class WorkflowModule:
             return None
     
     def _extract_phone(self) -> Optional[str]:
-        """Extract phone number."""
+        """Extract phone number using centralized selectors."""
         try:
-            selectors = [
-                "//section[contains(@class, 'pv-contact-info__contact-type')]//span[contains(@class, 'pv-contact-info__contact-link')]",
-                "//li[contains(@class, 'pv-contact-info__contact-item')]//span",
-            ]
+            element = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="phone",
+                timeout=0
+            )
             
-            for selector in selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for element in elements:
-                        text = element.text.strip()
-                        # Simple phone number detection
-                        if any(char.isdigit() for char in text) and len(text) >= 10:
-                            logger.debug(f"Found phone: {text}")
-                            return text
-                except NoSuchElementException:
-                    continue
+            if element:
+                text = element.text.strip()
+                # Simple phone number detection
+                if any(char.isdigit() for char in text) and len(text) >= 10:
+                    logger.debug(f"Found phone: {text}")
+                    return text
             
             logger.debug("Phone not found")
             return None
@@ -268,22 +245,20 @@ class WorkflowModule:
             return None
     
     def _extract_linkedin_url(self) -> Optional[str]:
-        """Extract LinkedIn profile URL from modal."""
+        """Extract LinkedIn profile URL from modal using centralized selectors."""
         try:
-            selectors = [
-                "//a[contains(@href, 'linkedin.com/in/')]",
-                "//section[contains(@class, 'pv-contact-info')]//a[contains(@href, 'linkedin.com')]",
-            ]
+            element = find_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="linkedin_profile",
+                timeout=0
+            )
             
-            for selector in selectors:
-                try:
-                    element = self.driver.find_element(By.XPATH, selector)
-                    url = element.get_attribute('href')
-                    if url and 'linkedin.com/in/' in url:
-                        logger.debug(f"Found LinkedIn URL: {url}")
-                        return url
-                except NoSuchElementException:
-                    continue
+            if element:
+                url = element.get_attribute('href')
+                if url and 'linkedin.com/in/' in url:
+                    logger.debug(f"Found LinkedIn URL: {url}")
+                    return url
             
             logger.debug("LinkedIn URL not found")
             return None
@@ -295,7 +270,7 @@ class WorkflowModule:
     @retry_on_stale_element(max_retries=2)
     def close_modal(self) -> bool:
         """
-        Close contact information modal.
+        Close contact information modal using centralized selectors.
         
         Returns:
             True if successful, False otherwise
@@ -303,23 +278,18 @@ class WorkflowModule:
         try:
             logger.debug("Closing modal...")
             
-            # Find close button
-            close_selectors = [
-                "//button[contains(@aria-label, 'Dismiss')]",
-                "//button[contains(@class, 'artdeco-modal__dismiss')]",
-                "//button[@data-test-modal-close-btn]",
-            ]
+            # Use centralized selector to close modal
+            clicked = click_element_with_fallback(
+                self.driver,
+                category="contact_modal",
+                name="dismiss_button",
+                timeout=2
+            )
             
-            for selector in close_selectors:
-                try:
-                    button = self.driver.find_element(By.XPATH, selector)
-                    if button:
-                        self.human.human_click(self.driver, button)
-                        self.human.random_pause(0.5, 1)
-                        logger.debug("Modal closed")
-                        return True
-                except NoSuchElementException:
-                    continue
+            if clicked:
+                self.human.random_pause(0.5, 1)
+                logger.debug("Modal closed")
+                return True
             
             logger.warning("Close button not found")
             return False

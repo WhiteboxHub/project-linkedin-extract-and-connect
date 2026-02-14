@@ -51,18 +51,43 @@ SELECTORS = {
             "description": "Messaging container/overlay",
             "critical": True,
         },
+        "thread_container": {
+            "primary": (By.CSS_SELECTOR, ".msg-conversations-container__conversations-list"),
+            "fallback": [
+                (By.CSS_SELECTOR, "ul.msg-conversations-container__conversations-list"),
+                (By.CSS_SELECTOR, "[class*='msg-conversations-container']"),
+            ],
+            "description": "Thread list container",
+            "critical": True,
+        },
         "thread_list": {
             "primary": (By.XPATH, "//div[contains(@class, 'msg-conversations-container__convo-item-link')]"),
             "fallback": [
+                (By.XPATH, "//li[contains(@class, 'msg-conversation-listitem')]"),
+                (By.XPATH, "//div[contains(@class, 'msg-conversation-card')]"),
+                (By.XPATH, "//div[contains(@class, 'msg-conversation-listitem__link')]"),
+                (By.XPATH, "//div[contains(@class, 'msg-selectable-entity')]"),
                 (By.CSS_SELECTOR, ".msg-conversations-container__convo-item-link"),
                 (By.CSS_SELECTOR, "[data-control-name='view_conversation']"),
             ],
             "description": "Message thread items",
             "critical": True,
         },
-        "view_profile_button": {
-            "primary": (By.XPATH, "//button[contains(text(), 'View profile')]"),
+        "load_more_button": {
+            "primary": (By.XPATH, "//button[contains(@class, 'artdeco-button') and contains(., 'Load more')]"),
             "fallback": [
+                (By.XPATH, "//button[contains(text(), 'Load more')]"),
+                (By.CSS_SELECTOR, "button.artdeco-button[aria-label*='Load']"),
+            ],
+            "description": "Load more messages button",
+            "critical": False,
+        },
+        "view_profile_button": {
+            "primary": (By.XPATH, "//button[contains(@aria-label, 'view') and contains(@aria-label, 'profile')]"),
+            "fallback": [
+                (By.XPATH, "//button[contains(text(), 'View profile')]"),
+                (By.XPATH, "//button[contains(@class, 'msg-thread__link-to-profile')]"),
+                (By.XPATH, "//a[contains(@class, 'msg-thread__link-to-profile')]"),
                 (By.XPATH, "//button[contains(@aria-label, 'View')]"),
                 (By.CSS_SELECTOR, "button[aria-label*='View']"),
             ],
@@ -86,16 +111,20 @@ SELECTORS = {
             "primary": (By.XPATH, "//a[contains(@href, 'mailto:')]"),
             "fallback": [
                 (By.CSS_SELECTOR, "a[href^='mailto:']"),
-                (By.XPATH, "//section[.//h3[contains(text(), 'Email')]]//a"),
+                (By.XPATH, "//section//a[contains(@href, 'mailto:')]"),  # Within section
+                (By.XPATH, "//section[.//h3[contains(text(), 'Email')]]//a"),  # OLD structure
             ],
             "description": "Email link in contact info",
             "critical": False,
         },
         "phone": {
-            "primary": (By.XPATH, "//section[.//h3[text()='Phone']]//span[@class='t-14 t-black t-normal']"),
+            "primary": (By.XPATH, "//section[.//h3[text()='Phone']]//span[@class='t-14 t-black t-normal']"),  # OLD structure
             "fallback": [
-                (By.XPATH, "//section[contains(@class, 'pv-contact-info__contact-type')]//span[contains(@class, 't-14')]"),
-                (By.CSS_SELECTOR, ".pv-contact-info__contact-type.ci-phone span"),
+                (By.XPATH, "//section[.//p[contains(text(), 'Phone')]]//p[contains(@class, 'e327422b')]"),  # NEW structure
+                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(text(), '+')]"),  # NEW obfuscated with phone pattern
+                (By.XPATH, "//section//span[contains(text(), '+') and contains(text(), '-')]"),  # Phone number pattern
+                (By.XPATH, "//section[contains(@class, 'pv-contact-info__contact-type')]//span[contains(@class, 't-14')]"),  # OLD fallback
+                (By.CSS_SELECTOR, ".pv-contact-info__contact-type.ci-phone span"),  # OLD fallback
             ],
             "description": "Phone number in contact info",
             "critical": False,
@@ -123,13 +152,42 @@ SELECTORS = {
     # ========== PROFILE PAGE ==========
     "profile": {
         "name": {
-            "primary": (By.XPATH, "//h1[contains(@class, 'text-heading-xlarge')]"),
+            "primary": (By.XPATH, "//h2[contains(@class, '_1b2d0c42')]"),  # NEW structure (h2 with obfuscated)
             "fallback": [
-                (By.CSS_SELECTOR, "h1.text-heading-xlarge"),
-                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//h1"),
+                (By.XPATH, "//h2[contains(@class, 'c9b4ed2d')]"),  # NEW structure variant
+                (By.TAG_NAME, "h2"),  # Any h2 fallback
+                (By.XPATH, "//h1[contains(@class, 'break-words') and contains(@class, 'inline')]"),  # OLD structure
+                (By.XPATH, "//h1[contains(@class, 'text-heading-xlarge')]"),  # OLD structure
+                (By.CSS_SELECTOR, "h1.text-heading-xlarge"),  # OLD structure
+                (By.XPATH, "//h1[contains(@class, 'v-align-middle')]"),  # OLD structure
+                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//h1"),  # OLD structure
+                (By.TAG_NAME, "h1"),  # Any h1 fallback
             ],
-            "description": "Profile name/headline",
+            "description": "Profile name (h1 or h2 depending on LinkedIn A/B test)",
             "critical": True,
+        },
+        "location": {
+            "primary": (By.XPATH, "//div[contains(@class, 'pv-text-details')]//p[contains(text(), ',')]"),  # Structure-based (most stable)
+            "fallback": [
+                (By.XPATH, "//h2/../following-sibling::div//p[contains(text(), ',')]"),  # Structure: p with comma after h2
+                (By.CSS_SELECTOR, ".text-body-small.inline.t-black--light.break-words"),  # OLD semantic class
+                (By.CSS_SELECTOR, ".pv-top-card__location"),  # OLD semantic class
+                (By.XPATH, "//span[contains(@class, 'text-body-small') and contains(@class, 't-black--light')]"),  # OLD fallback
+                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(@class, 'e327422b')]"),  # NEW obfuscated
+                (By.XPATH, "//p[contains(@class, '_2d40a4a7')]"),  # NEW obfuscated variant
+                (By.XPATH, "//p[contains(text(), ',') and string-length(text()) < 100 and string-length(text()) > 5]"),  # Text pattern
+            ],
+            "description": "Profile location",
+            "critical": False,
+        },
+        "company_text": {
+            "primary": (By.XPATH, "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"),  # OLD structure
+            "fallback": [
+                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//div[contains(@class, 'inline-show-more-text')]"),  # Structure-based
+                (By.XPATH, "//div[contains(@class, '_1b2d0c42') and contains(@class, 'f3e5fdd5')]"),  # NEW obfuscated
+            ],
+            "description": "Company name text",
+            "critical": False,
         },
         "company_button": {
             "primary": (By.XPATH, "//button[contains(@aria-label, 'Current company:')]"),
@@ -138,15 +196,6 @@ SELECTORS = {
                 (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//button"),
             ],
             "description": "Current company button",
-            "critical": False,
-        },
-        "location": {
-            "primary": (By.CSS_SELECTOR, ".text-body-small.inline.t-black--light.break-words"),
-            "fallback": [
-                (By.XPATH, "//span[contains(@class, 'text-body-small') and contains(@class, 't-black--light')]"),
-                (By.CSS_SELECTOR, ".pv-text-details__left-panel .text-body-small"),
-            ],
-            "description": "Profile location",
             "critical": False,
         },
         "contact_info_link": {
