@@ -181,10 +181,12 @@ SELECTORS = {
             "critical": False,
         },
         "company_text": {
-            "primary": (By.XPATH, "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"),  # OLD structure
+            "primary": (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(@class, 'e327422b')]"),  # NEW obfuscated (like "HCLTech")
             "fallback": [
+                (By.XPATH, "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"),  # OLD structure
                 (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//div[contains(@class, 'inline-show-more-text')]"),  # Structure-based
-                (By.XPATH, "//div[contains(@class, '_1b2d0c42') and contains(@class, 'f3e5fdd5')]"),  # NEW obfuscated
+                (By.XPATH, "//div[contains(@class, '_1b2d0c42') and contains(@class, 'f3e5fdd5')]"),  # NEW obfuscated variant
+                (By.XPATH, "//p[contains(@class, '_1b2d0c42')]"),  # Simple obfuscated fallback
             ],
             "description": "Company name text",
             "critical": False,
@@ -199,10 +201,12 @@ SELECTORS = {
             "critical": False,
         },
         "contact_info_link": {
-            "primary": (By.CSS_SELECTOR, "a#top-card-text-details-contact-info"),
+            "primary": (By.XPATH, "//a[contains(@class, '_190ec6e8') and contains(text(), 'Contact info')]"),  # NEW obfuscated
             "fallback": [
-                (By.XPATH, "//a[@id='top-card-text-details-contact-info']"),
-                (By.XPATH, "//a[contains(@href, 'overlay/contact-info')]"),
+                (By.CSS_SELECTOR, "a#top-card-text-details-contact-info"),  # OLD ID-based
+                (By.XPATH, "//a[@id='top-card-text-details-contact-info']"),  # OLD ID-based
+                (By.XPATH, "//a[contains(@href, 'overlay/contact-info')]"),  # Structure-based
+                (By.XPATH, "//a[contains(text(), 'Contact info')]"),  # Text-based fallback
             ],
             "description": "Contact info link on profile",
             "critical": False,
