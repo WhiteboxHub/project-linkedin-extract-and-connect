@@ -16,7 +16,12 @@ SELECTORS = {
     "login": {
         "global_nav": {
             "primary": (By.ID, "global-nav"),
-            "fallback": [(By.CSS_SELECTOR, "nav.global-nav")],
+            "fallback": [
+                (By.XPATH, "//header[@id='global-nav']"), 
+                (By.CSS_SELECTOR, "header[aria-label='Global Navigation']"), 
+                (By.XPATH, "//header[@aria-label='Global Navigation']"),  
+                (By.CSS_SELECTOR, "nav.global-nav"),  
+            ],
             "description": "Main navigation bar (indicates logged in)",
             "critical": True,
         },
@@ -108,34 +113,39 @@ SELECTORS = {
             "critical": True,
         },
         "email": {
-            "primary": (By.XPATH, "//a[contains(@href, 'mailto:')]"),
+            "primary": (By.XPATH, "//h3[normalize-space()='Email' and contains(@class, 'pv-contact-info__header')]/following-sibling::div[1]/a[starts-with(@href, 'mailto:')]"),
             "fallback": [
-                (By.CSS_SELECTOR, "a[href^='mailto:']"),
-                (By.XPATH, "//section//a[contains(@href, 'mailto:')]"),  # Within section
-                (By.XPATH, "//section[.//h3[contains(text(), 'Email')]]//a"),  # OLD structure
+                (By.CSS_SELECTOR, "section.pv-contact-info__contact-type a[href^='mailto:']"),  
+                (By.CSS_SELECTOR, "a[href^='mailto:']"),  
+                (By.XPATH, "//a[contains(@href, 'mailto:')]"),
+                (By.XPATH, "//section[contains(@class, 'pv-contact-info__contact-type')]//a[contains(@href, 'mailto:')]"),
+                (By.XPATH, "//div[contains(@class, 'pv-contact-info__contact-type')]//a[contains(@href, 'mailto:')]"),
+                (By.XPATH, "//section[.//h3[contains(text(), 'Email')]]//a"),  
             ],
-            "description": "Email link in contact info",
+            "description": "Email address link in contact info",
             "critical": False,
         },
         "phone": {
-            "primary": (By.XPATH, "//section[.//h3[text()='Phone']]//span[@class='t-14 t-black t-normal']"),  # OLD structure
+            "primary": (By.XPATH, "//h3[normalize-space()='Phone' and contains(@class, 'pv-contact-info__header')]/following-sibling::ul[contains(@class, 'list-style-none')]/li[contains(., 'Mobile')]"), 
             "fallback": [
-                (By.XPATH, "//section[.//p[contains(text(), 'Phone')]]//p[contains(@class, 'e327422b')]"),  # NEW structure
-                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(text(), '+')]"),  # NEW obfuscated with phone pattern
-                (By.XPATH, "//section//span[contains(text(), '+') and contains(text(), '-')]"),  # Phone number pattern
-                (By.XPATH, "//section[contains(@class, 'pv-contact-info__contact-type')]//span[contains(@class, 't-14')]"),  # OLD fallback
-                (By.CSS_SELECTOR, ".pv-contact-info__contact-type.ci-phone span"),  # OLD fallback
+                (By.XPATH, "//h3[contains(text(), 'Phone')]/following-sibling::ul//li"),  
+                (By.XPATH, "//section[.//p[contains(text(), 'Phone')]]//p[contains(@class, 'e327422b')]"),  
+                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(text(), '+')]"),
+                (By.XPATH, "//section//span[contains(text(), '+') and contains(text(), '-')]"),
+                (By.CSS_SELECTOR, ".pv-contact-info__contact-type.ci-phone span"),
             ],
             "description": "Phone number in contact info",
             "critical": False,
         },
         "linkedin_profile": {
-            "primary": (By.XPATH, "//a[contains(@href, 'linkedin.com/in/')]"),
+            "primary": (By.XPATH, "//a[contains(@class, 'CrQaQMFOHkAjpbixOvuXZRHoRHphjkWBiWw') and contains(@href, 'linkedin.com/in/')]"),  # NEW obfuscated
             "fallback": [
-                (By.CSS_SELECTOR, "a[href*='linkedin.com/in/']"),
-                (By.XPATH, "//section[.//h3[contains(text(), 'Profile')]]//a"),
+                (By.XPATH, "//div[contains(@class, 'SMyPEKqtxpDaImCXiOgFAlgSqjRlBGsPkPRmY')]//a[contains(@href, 'linkedin.com/in/')]"),  # NEW with parent class
+                (By.XPATH, "//a[contains(@href, 'linkedin.com/in/')]"),  
+                (By.CSS_SELECTOR, "a[href*='linkedin.com/in/']"),  
+                (By.XPATH, "//section[.//h3[contains(text(), 'Profile')]]//a"),  
             ],
-            "description": "LinkedIn profile URL",
+            "description": "LinkedIn profile URL in contact modal",
             "critical": True,
         },
         "dismiss_button": {
@@ -152,41 +162,50 @@ SELECTORS = {
     # ========== PROFILE PAGE ==========
     "profile": {
         "name": {
-            "primary": (By.XPATH, "//h2[contains(@class, '_1b2d0c42')]"),  # NEW structure (h2 with obfuscated)
+            "primary": (By.XPATH, "//h2[contains(@class, '_1b2d0c42')]"), 
             "fallback": [
-                (By.XPATH, "//h2[contains(@class, 'c9b4ed2d')]"),  # NEW structure variant
-                (By.TAG_NAME, "h2"),  # Any h2 fallback
-                (By.XPATH, "//h1[contains(@class, 'break-words') and contains(@class, 'inline')]"),  # OLD structure
-                (By.XPATH, "//h1[contains(@class, 'text-heading-xlarge')]"),  # OLD structure
-                (By.CSS_SELECTOR, "h1.text-heading-xlarge"),  # OLD structure
-                (By.XPATH, "//h1[contains(@class, 'v-align-middle')]"),  # OLD structure
-                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//h1"),  # OLD structure
-                (By.TAG_NAME, "h1"),  # Any h1 fallback
+                (By.XPATH, "//h2[contains(@class, 'c9b4ed2d')]"), 
+                (By.TAG_NAME, "h2"), 
+                (By.XPATH, "//h1[contains(@class, 'break-words') and contains(@class, 'inline')]"), 
+                (By.XPATH, "//h1[contains(@class, 'text-heading-xlarge')]"), 
+                (By.CSS_SELECTOR, "h1.text-heading-xlarge"),  
+                (By.XPATH, "//h1[contains(@class, 'v-align-middle')]"), 
+                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//h1"),  
+                (By.TAG_NAME, "h1"),  
             ],
             "description": "Profile name (h1 or h2 depending on LinkedIn A/B test)",
             "critical": True,
         },
         "location": {
-            "primary": (By.XPATH, "//div[contains(@class, 'pv-text-details')]//p[contains(text(), ',')]"),  # Structure-based (most stable)
+            "primary": (By.CSS_SELECTOR, "span.text-body-small.break-words"),
             "fallback": [
-                (By.XPATH, "//h2/../following-sibling::div//p[contains(text(), ',')]"),  # Structure: p with comma after h2
-                (By.CSS_SELECTOR, ".text-body-small.inline.t-black--light.break-words"),  # OLD semantic class
-                (By.CSS_SELECTOR, ".pv-top-card__location"),  # OLD semantic class
-                (By.XPATH, "//span[contains(@class, 'text-body-small') and contains(@class, 't-black--light')]"),  # OLD fallback
-                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(@class, 'e327422b')]"),  # NEW obfuscated
-                (By.XPATH, "//p[contains(@class, '_2d40a4a7')]"),  # NEW obfuscated variant
-                (By.XPATH, "//p[contains(text(), ',') and string-length(text()) < 100 and string-length(text()) > 5]"),  # Text pattern
+                (By.XPATH, "//span[contains(@class, 'text-body-small') and contains(@class, 'break-words')]"),
+                (By.XPATH, "//div[contains(@class, 'pv-text-details')]//p[contains(text(), ',')]"),  
+                (By.XPATH, "//h2/../following-sibling::div//p[contains(text(), ',')]"),  
+                (By.CSS_SELECTOR, ".text-body-small.inline.t-black--light.break-words"), 
+                (By.CSS_SELECTOR, ".pv-top-card__location"),  
+                (By.XPATH, "//span[contains(@class, 'text-body-small') and contains(@class, 't-black--light')]"), 
+                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(@class, 'e327422b')]"),
+                (By.XPATH, "//p[contains(@class, '_2d40a4a7')]"),  
+                (By.XPATH, "//p[contains(text(), ',') and string-length(text()) < 100 and string-length(text()) > 5]"), 
             ],
             "description": "Profile location",
             "critical": False,
         },
         "company_text": {
-            "primary": (By.XPATH, "//p[contains(@class, '_1b2d0c42') and contains(@class, 'e327422b')]"),  # NEW obfuscated (like "HCLTech")
+            "primary": (By.XPATH, "//button[starts-with(@aria-label, 'Current company:')]"),  
             "fallback": [
-                (By.XPATH, "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"),  # OLD structure
-                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//div[contains(@class, 'inline-show-more-text')]"),  # Structure-based
-                (By.XPATH, "//div[contains(@class, '_1b2d0c42') and contains(@class, 'f3e5fdd5')]"),  # NEW obfuscated variant
-                (By.XPATH, "//p[contains(@class, '_1b2d0c42')]"),  # Simple obfuscated fallback
+                (By.CSS_SELECTOR, "li button span.hoverable-link-text"),
+                (By.XPATH, "//li/button/span[contains(@class, 'hoverable-link-text')]"),
+                (By.XPATH, "(//p[contains(@class, '_1b2d0c42') and contains(@class, 'e327422b')])[2]"),  
+                (By.XPATH, "//div[contains(@class, 'eaKYonKKpOWiyfVajlxvtRKCPIMLJtTAw') and contains(@class, 'inline-show-more-text')]"), 
+                (By.XPATH, "(//p[contains(@class, '_1b2d0c42')])[2]"),  
+                (By.XPATH, "(//p[contains(@class, '_1b2d0c42')])[3]"),  
+                (By.XPATH, "//button[contains(@aria-label, 'Current company:')]//div[contains(@class, 'inline-show-more-text')]"),  
+                (By.XPATH, "//div[contains(@class, 'pv-text-details__left-panel')]//div[contains(@class, 'inline-show-more-text')]"),  
+                (By.XPATH, "//div[contains(@class, 'inline-show-more-text')]"),  
+                (By.XPATH, "//div[contains(@class, '_1b2d0c42') and contains(@class, 'f3e5fdd5')]"), 
+                (By.XPATH, "//p[contains(@class, '_1b2d0c42') and not(contains(text(), ','))]"),  
             ],
             "description": "Company name text",
             "critical": False,
@@ -201,12 +220,14 @@ SELECTORS = {
             "critical": False,
         },
         "contact_info_link": {
-            "primary": (By.XPATH, "//a[contains(@class, '_190ec6e8') and contains(text(), 'Contact info')]"),  # NEW obfuscated
+            "primary": (By.CSS_SELECTOR, "#top-card-text-details-contact-info"),  
             "fallback": [
-                (By.CSS_SELECTOR, "a#top-card-text-details-contact-info"),  # OLD ID-based
-                (By.XPATH, "//a[@id='top-card-text-details-contact-info']"),  # OLD ID-based
-                (By.XPATH, "//a[contains(@href, 'overlay/contact-info')]"),  # Structure-based
-                (By.XPATH, "//a[contains(text(), 'Contact info')]"),  # Text-based fallback
+                (By.CSS_SELECTOR, "a[href*='contact-info']"),  
+                (By.XPATH, "//a[contains(@href, 'contact-info')]"),  
+                (By.XPATH, "//a[normalize-space()='Contact info']"),  
+                (By.XPATH, "//*[@id='top-card-text-details-contact-info']"),  
+                (By.XPATH, "//a[contains(@class, '_190ec6e8') and contains(text(), 'Contact info')]"), 
+                (By.XPATH, "//a[contains(@href, 'overlay/contact-info')]"),  
             ],
             "description": "Contact info link on profile",
             "critical": False,

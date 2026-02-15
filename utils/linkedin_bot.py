@@ -265,7 +265,7 @@ class LinkedInBot:
                 logger.info("[LOGIN] Screenshot saved to debug_feed_no_indicators.png")
                 return
             
-            # Check for "Welcome Back" screens (multiple scenarios)
+            # Check for "Welcome Back" screens
             is_welcome_back_password = False
             is_account_selection = False
             
@@ -595,16 +595,30 @@ class LinkedInBot:
         logger.debug("[COMPANY] Attempting to extract company...")
         
         # Try centralized selector system first
-        company = get_text_with_fallback(
+        company_data = get_text_with_fallback(
             self.driver,
             category="profile",
             name="company_text",
             timeout=0
         )
         
-        if company and company != "LinkedIn Member":
-            logger.debug(f"[COMPANY] Found: {company}")
-            return company
+        # Handle if we got a WebElement (from the new primary button selector)
+        if company_data and not isinstance(company_data, str):
+            try:
+                # It's a WebElement (button), get aria-label
+                label = company_data.get_attribute('aria-label')
+                if label and 'Current company:' in label:
+                    # Parse "Current company: [Name]. Click to skip..."
+                    company_name = label.replace('Current company:', '').split('. Click')[0].strip()
+                    logger.debug(f"[COMPANY] Extracted from aria-label: {company_name}")
+                    return company_name
+            except Exception as e:
+                logger.debug(f"[COMPANY] Error parsing aria-label: {e}")
+                pass
+        elif isinstance(company_data, str) and company_data and company_data != "LinkedIn Member":
+            # It's already text from one of the fallbacks
+            logger.debug(f"[COMPANY] Found: {company_data}")
+            return company_data
         
         # Try extracting from aria-label as fallback
         try:
@@ -744,15 +758,26 @@ class LinkedInBot:
             logger.info(f"[THREAD {thread_num}] Email: {contact_info.get('email') or 'N/A'}")
             logger.info(f"[THREAD {thread_num}] Phone: {contact_info.get('phone') or 'N/A'}")
             
-            # Generate IDs
-            linkedin_internal_id = profile_url.rstrip("/").split("/")[-1].split('?')[0]
+            # Generate IDs - handle overlay/contact-info URLs
+            # Clean the profile_url to remove /overlay/contact-info if present
+            clean_url = profile_url.split('/overlay/')[0] if '/overlay/' in profile_url else profile_url
+            linkedin_internal_id = clean_url.rstrip("/").split("/")[-1].split('?')[0]
             linkedin_id = linkedin_internal_id
             
             current_url = self.driver.current_url
-            if "/in/" in current_url:
-                slug = current_url.split("/in/")[-1].split('?')[0].rstrip('/')
+            # Also clean current_url
+            clean_current = current_url.split('/overlay/')[0] if '/overlay/' in current_url else current_url
+            if "/in/" in clean_current:
+                slug = clean_current.split("/in/")[-1].split('?')[0].rstrip('/')
                 if slug and len(slug) > 5:
                     linkedin_id = slug
+            
+            # Secondary: Try to get LinkedIn ID from contact modal's public_linkedin URL
+            if contact_info.get('public_linkedin') and '/in/' in contact_info['public_linkedin']:
+                modal_id = contact_info['public_linkedin'].split('/in/')[-1].split('?')[0].rstrip('/')
+                if modal_id and len(modal_id) > 5:
+                    linkedin_id = modal_id
+                    logger.debug(f"[THREAD {thread_num}] LinkedIn ID from contact modal: {linkedin_id}")
             
             logger.info(f"[THREAD {thread_num}] LinkedIn ID: {linkedin_id}")
             
