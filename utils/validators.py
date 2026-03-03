@@ -167,13 +167,7 @@ def validate_modules() -> Tuple[bool, List[str]]:
     except ImportError as e:
         errors.append(f"Stealth module import failed: {e}")
     
-    # Test LinkedInBot
-    try:
-        from utils.linkedin_bot import LinkedInBot
-        logger.debug("[VALIDATION] LinkedInBot imported successfully")
-    except ImportError as e:
-        errors.append(f"LinkedInBot import failed: {e}")
-    
+
     # Test metrics
     try:
         from utils.metrics import ExtractionMetrics
@@ -190,7 +184,7 @@ def validate_modules() -> Tuple[bool, List[str]]:
     
     # Test database utilities
     try:
-        from utils.db import bulk_insert_contacts, log_extraction_activity
+        from utils.db import bulk_insert_automation_contacts, log_extraction_activity
         logger.debug("[VALIDATION] Database utilities imported successfully")
     except ImportError as e:
         errors.append(f"Database utilities import failed: {e}")

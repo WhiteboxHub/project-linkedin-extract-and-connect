@@ -1,34 +1,14 @@
-# ============================================
-# LINKEDIN CONTACT EXTRACTION BOT
-# .gitignore - Files to exclude from Git
-# ============================================
-
-# ============================================
-# CRITICAL - NEVER COMMIT THESE!
-# ============================================
-
-# Credentials & Secrets
 config.py
 .env
 .env.local
 .env.*.local
-
-# API Tokens & Keys
 *.pem
 *.key
 *.cert
-
-# ============================================
-# PYTHON
-# ============================================
-
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -48,43 +28,28 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-# Virtual environments
 venv/
 env/
 ENV/
 .venv/
 .venv
-
-# ============================================
-# DATA & DATABASES
-# ============================================
-
-# DuckDB databases
 data/*.duckdb
 data/*.duckdb.wal
 data/*.db
 *.duckdb
 *.duckdb.wal
 *.db
-
-# CSV exports
+data/bot_profiles/
+data/raw_messages/
+data/output/
 data/*.csv
 logs/*.csv
 extracted_contacts_*.csv
 marketing_candidates.csv
-
-# Temporary data
 *.tmp
 *.temp
 temp/
 tmp/
-
-# ============================================
-# LOGS
-# ============================================
-
-# Log files
 logs/
 *.log
 test_logs*/
@@ -92,84 +57,44 @@ test_logs_integration/
 test_logs_integration_final/
 test_logs_integration_temp/
 test_logs_temp/
-
-# Debug output
 debug_*.png
 debug_*.txt
 test_output.txt
-
-# ============================================
-# BROWSER & DRIVERS
-# ============================================
-
-# WebDriver executables
 chromedriver.exe
 chromedriver
 geckodriver.exe
 geckodriver
 msedgedriver.exe
-
-# Browser profiles (if accidentally copied)
 chrome_profiles/
 firefox_profiles/
-
-# ============================================
-# IDE & EDITORS
-# ============================================
-
-# VSCode
 .vscode/
 *.code-workspace
-
-# PyCharm / IntelliJ
 .idea/
 *.iml
 *.iws
 *.ipr
-
-# Sublime Text
 *.sublime-project
 *.sublime-workspace
-
-# Vim
 *.swp
 *.swo
 *~
 .*.swp
 .*.swo
-
-# Emacs
 *~
 \#*\#
 .\#*
-
-# ============================================
-# OPERATING SYSTEM
-# ============================================
-
-# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 ._*
-
-# Windows
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
 ehthumbs_vista.db
 desktop.ini
 $RECYCLE.BIN/
-
-# Linux
 .directory
 .Trash-*
-
-# ============================================
-# TESTING
-# ============================================
-
-# Test artifacts
 test_*.duckdb
 htmlcov/
 .coverage
@@ -180,8 +105,6 @@ htmlcov/
 coverage.xml
 *.cover
 .hypothesis/
-
-# Phase test files (development only)
 test_phase1_*.py
 test_phase2_*.py
 test_phase3_*.py
@@ -189,100 +112,52 @@ test_phase4_*.py
 test_phase5_*.py
 test_phase6_*.py
 test_phase7_*.py
-
-# Temporary test scripts
 test_individual.py
 test_single_10.py
 test_chrome_fix.py
 deploy_check.py
-
-# ============================================
-# BACKUP FILES
-# ============================================
-
+test_ner*.py
+test_gliner*.py
+ner_*.py
+ner_edge_test.py
+ner_realistic_test.py
+_test_output.txt
+test_output.txt
+*_test_output.txt
+tests/
 *.bak
 *.backup
 *.old
 *.orig
 *~
-
-# ============================================
-# PROJECT SPECIFIC
-# ============================================
-
-# Multi-account logs
 multi_account.log
 bot.log
-
-# PowerShell scripts (development/deployment only)
 fix_chrome.ps1
 run_bot.ps1
-
-# Temporary test files
 test_individual.py
 test_single_10.py
 test_chrome_fix.py
 test_output.txt
-
-# Legacy files
 *_legacy.py
 *_old.py
 *_backup.py
 connections.py
-
-# Development/validation scripts
 validate_profiles.py
 deploy_check.py
-
-# Temporary CSV files
 marketing_candidates.csv
-
-# ============================================
-# DOCUMENTATION (Optional - Uncomment if needed)
-# ============================================
-
-# Uncomment to ignore generated docs
-# docs/_build/
-# site/
-
-# ============================================
-# MISC
-# ============================================
-
-# Jupyter Notebook
 .ipynb_checkpoints
-
-# pyenv
 .python-version
-
-# pipenv
 Pipfile.lock
-
-# poetry
 poetry.lock
-
-# Celery
 celerybeat-schedule
 celerybeat.pid
-
-# SageMath
 *.sage.py
-
-# Spyder
 .spyderproject
 .spyproject
-
-# Rope
 .ropeproject
-
-# mkdocs
 /site
-
-# mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
-# Pyre
 .pyre/
 *.pyc

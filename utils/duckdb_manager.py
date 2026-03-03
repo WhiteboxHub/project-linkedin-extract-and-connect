@@ -78,19 +78,108 @@ class DuckDBManager:
             raise
     
     def _init_schema(self):
-        """Initialize database schema from schema.sql."""
+        """Initialize database schema.
+
+        Uses data/schema.sql if it exists; otherwise creates tables inline
+        so the bot works even without the schema file.
+        """
         schema_path = Path("data/schema.sql")
         if schema_path.exists():
             try:
                 with open(schema_path, 'r') as f:
                     schema_sql = f.read()
                 self.conn.execute(schema_sql)
-                logger.info("[DUCKDB] Schema initialized")
+                logger.info("[DUCKDB] Schema initialized from schema.sql")
+                return
             except Exception as e:
-                logger.error(f"[DUCKDB] Schema initialization failed: {e}")
-                raise
-        else:
-            logger.warning(f"[DUCKDB] Schema file not found: {schema_path}")
+                logger.warning(f"[DUCKDB] schema.sql load failed ({e}), falling back to inline schema")
+
+        # ------------------------------------------------------------------
+        # Inline schema — always works, no file required
+        # ------------------------------------------------------------------
+        logger.info("[DUCKDB] Creating tables inline (schema.sql not found)")
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS extraction_runs (
+                run_id       INTEGER PRIMARY KEY,
+                started_at   TIMESTAMP NOT NULL,
+                ended_at     TIMESTAMP,
+                employee_id  INTEGER,
+                candidate_id INTEGER,
+                username     VARCHAR,
+                status       VARCHAR DEFAULT 'running',
+                threads_discovered  INTEGER DEFAULT 0,
+                threads_processed   INTEGER DEFAULT 0,
+                contacts_extracted  INTEGER DEFAULT 0,
+                contacts_inserted   INTEGER DEFAULT 0,
+                errors              INTEGER DEFAULT 0,
+                duration_seconds    DOUBLE
+            )
+        """)
+        self.conn.execute("""
+            CREATE SEQUENCE IF NOT EXISTS extraction_runs_seq START 1
+        """)
+        # Patch run_id to use the sequence if table was just created empty
+        try:
+            # DuckDB: set default to use sequence
+            self.conn.execute("""
+                ALTER TABLE extraction_runs
+                ALTER COLUMN run_id SET DEFAULT nextval('extraction_runs_seq')
+            """)
+        except Exception:
+            pass  # Already set or not needed
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS contacts (
+                contact_id   INTEGER PRIMARY KEY,
+                run_id       INTEGER,
+                extracted_at TIMESTAMP DEFAULT current_timestamp,
+                full_name    VARCHAR,
+                company_name VARCHAR,
+                job_title    VARCHAR,
+                email        VARCHAR,
+                phone        VARCHAR,
+                location     VARCHAR,
+                linkedin_id  VARCHAR,
+                profile_url  VARCHAR,
+                source_email VARCHAR,
+                raw_payload  JSON
+            )
+        """)
+        self.conn.execute("""
+            CREATE SEQUENCE IF NOT EXISTS contacts_seq START 1
+        """)
+        try:
+            self.conn.execute("""
+                ALTER TABLE contacts
+                ALTER COLUMN contact_id SET DEFAULT nextval('contacts_seq')
+            """)
+        except Exception:
+            pass
+
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS extraction_failures (
+                failure_id   INTEGER PRIMARY KEY,
+                run_id       INTEGER,
+                failed_at    TIMESTAMP DEFAULT current_timestamp,
+                thread_index INTEGER,
+                error_type   VARCHAR,
+                error_message VARCHAR,
+                profile_url  VARCHAR
+            )
+        """)
+        self.conn.execute("""
+            CREATE SEQUENCE IF NOT EXISTS failures_seq START 1
+        """)
+        try:
+            self.conn.execute("""
+                ALTER TABLE extraction_failures
+                ALTER COLUMN failure_id SET DEFAULT nextval('failures_seq')
+            """)
+        except Exception:
+            pass
+
+        logger.info("[DUCKDB] Inline schema created successfully")
+
     
     def close(self):
         """Close database connection."""

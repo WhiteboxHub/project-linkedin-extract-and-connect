@@ -275,14 +275,14 @@ def test_activity_log_api(api_url, token, employee_id, candidate_id, job_type_id
         print(f"   API test error: {e}")
         return False
 
-def test_vendor_contact_api(api_url, token):
-    """Test the vendor contact API endpoint."""
+def test_automation_contact_api(api_url, token):
+    """Test the automation contact API endpoint."""
     try:
-        print("Testing Vendor Contact API...")
+        print("Testing Automation Contact API...")
         
         # Just test GET endpoint
         response = requests.get(
-            f"{api_url}/vendor_contact_extracts",
+            f"{api_url}/automation-extracts",
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
@@ -291,7 +291,7 @@ def test_vendor_contact_api(api_url, token):
         )
         
         if response.status_code == 200:
-            print(f"   Vendor Contact API accessible!")
+            print(f"   Automation Contact API accessible!")
             return True
         else:
             print(f"   API test failed: {response.status_code}")
@@ -479,7 +479,7 @@ def run_setup():
     print_step(5, "Test API Endpoints")
     
     activity_test = test_activity_log_api(api_url, token, employee_id, selected_candidate_id, extraction_job_id)
-    contact_test = test_vendor_contact_api(api_url, token)
+    contact_test = test_automation_contact_api(api_url, token)
     
     if not activity_test or not contact_test:
         print("\nWARNING: Some API tests failed.")
