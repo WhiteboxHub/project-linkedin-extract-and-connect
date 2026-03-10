@@ -787,6 +787,45 @@ def _extract_job_details(text: str) -> Dict[str, Optional[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Job Message Detection & Extraction
+# ---------------------------------------------------------------------------
+
+_JOB_URL_RE1 = re.compile(
+    r"https?://(?:www\.)?linkedin\.com/jobs/view/\d+",
+    re.IGNORECASE,
+)
+_JOB_URL_RE2 = re.compile(
+    r"https?://[a-zA-Z0-9.-]+(?:/jobs?|/careers?|/apply)[/\w.-]*",
+    re.IGNORECASE,
+)
+
+# Structured keywords that strongly signal a job opportunity message
+_JOB_SIGNAL_KEYWORDS = [
+    "role:", "position:", "title:", "job title:", "opening:",
+    "we are hiring", "currently hiring", "i'm hiring", "we're hiring",
+    "looking for a", "seeking a", "opportunity for",
+    "hiring for", "recruiting for",
+
+    "apply", "application",
+    "salary:", "compensation:", "pay range:",
+    "requirements:", "responsibilities:", "qualifications:",
+    "experience:", "skills:", "stack:",
+    "job description", "role description",
+]
+
+
+def _is_job_message(text: str) -> bool:
+    """
+    Return True if the message text appears to describe a job opportunity.
+    Requires at least ONE structured job keyword (high-precision signal).
+    """
+    if not text:
+        return False
+    lower = text.lower()
+    return any(kw in lower for kw in _JOB_SIGNAL_KEYWORDS)
+
+
+# ---------------------------------------------------------------------------
 # Main Class
 # ---------------------------------------------------------------------------
 
@@ -820,18 +859,32 @@ class OfflineExtractor:
     # Public Entry Point
     # ------------------------------------------------------------------
 
-    def run(self) -> List[Dict[str, Any]]:
-        """Execute the full offline extraction pipeline."""
+    def run(self) -> Dict[str, Any]:
+        """
+        Execute the full offline extraction pipeline.
+
+        Returns
+        -------
+        dict with keys:
+          "contacts"     — deduplicated recruiter contact records
+          "job_listings" — one record per job message (N per conversation)
+        """
         conversations = self._read_conversations()
         logger.info("[OFFLINE] Read %d conversation file(s)", len(conversations))
 
         raw_contacts: List[Dict[str, Any]] = []
+        raw_job_listings: List[Dict[str, Any]] = []
+
         for conv in conversations:
             raw_contacts.extend(self._extract_contacts_from_conversation(conv))
+            raw_job_listings.extend(self._extract_job_listings_from_conversation(conv))
 
-        logger.info("[OFFLINE] %d raw contact(s) extracted before validation", len(raw_contacts))
+        logger.info(
+            "[OFFLINE] %d raw contact(s), %d job listing(s) extracted",
+            len(raw_contacts), len(raw_job_listings),
+        )
 
-        # Email validation gate
+        # Email validation gate (contacts only)
         if self.validate_emails:
             try:
                 from utils.email_validator import validate_email
@@ -857,7 +910,6 @@ class OfflineExtractor:
                             "[OFFLINE] Rejected email (%s failed): %s", reason, email
                         )
                         rejected += 1
-
                 logger.info(
                     "[OFFLINE] Email validation: %d passed, %d rejected",
                     len(passed), rejected,
@@ -871,7 +923,7 @@ class OfflineExtractor:
         logger.info("[OFFLINE] Saved → %s", json_path)
         logger.info("[OFFLINE] Saved → %s", csv_path)
 
-        return contacts
+        return {"contacts": contacts, "job_listings": raw_job_listings}
 
     # ------------------------------------------------------------------
     # Reading
@@ -904,88 +956,153 @@ class OfflineExtractor:
         participant_url: Optional[str] = conv.get("participant_profile_url")
         messages: List[Dict] = conv.get("messages", [])
 
-        # Combine BOTH the real message text AND any LinkedIn card text
-        combined_parts = []
-        for m in messages:
-            if m.get("text"):
-                combined_parts.append(m["text"])
-            if m.get("card_text"):
-                combined_parts.append(m["card_text"])
-        combined_text = "\n".join(combined_parts)
+        candidate_email = (conv.get("candidate_email") or "").lower().strip()
 
-        # ── Primary: collect emails directly from <a href="mailto:..."> links ──
-        # These are scraped as raw href values — no regex needed, 100% accurate.
-        href_emails: List[str] = []
+        # ── Build combined text (for phones only) AND per-message data ──────
+        # KEY FIX: track which message each email came from so we can extract
+        # job details from THAT message only — not the whole conversation.
+        #
+        # Also detect and skip outgoing messages: if the ONLY email in a
+        # message is the candidate's own email, that message was sent by them.
+        combined_parts: List[str] = []
+        email_to_msg_data: Dict[str, Dict] = {}     # email → {text, phone, linkedin}
         href_linkedin_urls: List[str] = []
+        href_emails: List[str] = []
+        skipped_outgoing = 0
+
         for m in messages:
-            for addr in m.get("email_links", []):
-                if addr and addr.lower() not in href_emails:
-                    href_emails.append(addr.lower())
-            for lurl in m.get("linkedin_links", []):
-                if lurl and lurl not in href_linkedin_urls:
+            msg_email_links = [e.lower() for e in m.get("email_links", []) if e]
+            msg_linkedin    = [u for u in m.get("linkedin_links", []) if u]
+            msg_text        = (m.get("text") or "") + "\n" + (m.get("card_text") or "")
+            msg_text        = msg_text.strip()
+
+            # ── Outgoing detection: trust the DOM flag set by the scraper ────
+            # The scraper checks for div.msg-s-message-group__meta:
+            #   present  → recruiter (incoming)  → is_outgoing = False
+            #   absent   → candidate (outgoing)  → is_outgoing = True
+            # For JSON files scraped before this fix, fall back to the old email heuristic.
+            if "is_outgoing" in m:
+                if m["is_outgoing"]:
+                    skipped_outgoing += 1
+                    logger.debug("[OFFLINE] conv %s — skipping outgoing msg (DOM flag)", conv_id)
+                    continue
+            else:
+                # ── Legacy fallback for older JSON files ─────────────────
+                non_candidate_emails = [e for e in msg_email_links if e != candidate_email]
+                all_text_raw = [
+                    e.lower() for e in re.findall(
+                        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", msg_text
+                    ) if e
+                ]
+                non_candidate_in_text = [e for e in all_text_raw if e != candidate_email]
+                candidate_in_text = bool(candidate_email and candidate_email in msg_text.lower())
+                outgoing_by_links = bool(msg_email_links and not non_candidate_emails)
+                outgoing_by_text  = bool(
+                    candidate_in_text and not non_candidate_in_text and not non_candidate_emails
+                )
+                if outgoing_by_links or outgoing_by_text:
+                    skipped_outgoing += 1
+                    logger.debug("[OFFLINE] conv %s — skipping outgoing msg (legacy heuristic)", conv_id)
+                    continue
+
+            non_candidate_emails = [e for e in msg_email_links if e != candidate_email]
+
+            # ── This is an incoming message ──────────────────────────────
+            combined_parts.append(msg_text)
+
+            # collect per-message phones for this recruiter
+            msg_phones = self._extract_phones(msg_text)
+
+            # collect linkedin URLs (conversation-wide)
+            for lurl in msg_linkedin:
+                if lurl not in href_linkedin_urls:
                     href_linkedin_urls.append(lurl)
 
-        # ── Fallback: regex on combined text ──────────────────────────────────
+            # map each recruiter email to THIS message's data
+            for addr in non_candidate_emails:
+                if addr not in href_emails:
+                    href_emails.append(addr)
+                if addr not in email_to_msg_data:
+                    email_to_msg_data[addr] = {
+                        "text":    msg_text,
+                        "phone":   msg_phones[0] if msg_phones else None,
+                        "linkedin": msg_linkedin[0] if msg_linkedin else None,
+                    }
+
+        if skipped_outgoing:
+            logger.info(
+                "[OFFLINE] conv %s — skipped %d outgoing message(s)",
+                conv_id, skipped_outgoing,
+            )
+
+        combined_text = "\n".join(combined_parts)
+
+        # ── Regex fallback for emails not found via href ─────────────────
         regex_emails = self._extract_emails(combined_text)
 
-        # Merge: href emails first (more reliable), then any regex finds not already included
         seen_emails: Set[str] = set(href_emails)
         all_emails: List[str] = list(href_emails)
         for e in regex_emails:
-            if e not in seen_emails:
+            if e not in seen_emails and e != candidate_email:
                 seen_emails.add(e)
                 all_emails.append(e)
 
+        # conversation-wide phone fallback (used only if per-message phone is missing)
         phones = self._extract_phones(combined_text)
 
         if not all_emails:
-            logger.debug("[OFFLINE] conv %s — no emails found", conv_id)
+            logger.debug("[OFFLINE] conv %s — no recruiter emails found", conv_id)
             return []
 
         emails = all_emails
-
-
+        linkedin_internal_id = participant_url or ""
         contacts: List[Dict[str, Any]] = []
-
-        primary_phone = phones[0] if phones else None
         extraction_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # linkedin_id = recruiter's PUBLIC profile URL from their message signature
-        #               e.g. https://www.linkedin.com/in/lisa-chen
-        #               (extracted from <a href> in the message body)
-        # linkedin_internal_id = ACoAA... URL from thread header (internal ID form)
-        linkedin_id = href_linkedin_urls[0] if href_linkedin_urls else ""
-        linkedin_internal_id = participant_url or ""
-
         for email in emails:
+            # Belt-and-suspenders: skip candidate's own email
+            if email == candidate_email:
+                continue
+
             local_part, domain = email.rsplit("@", 1)
 
-            # Name
+            # ── Per-email message context ──────────────────────────────────
+            # Use the specific message that contained this email so job details
+            # (title/company/location) match THIS recruiter's message only.
+            msg_data  = email_to_msg_data.get(email, {})
+            msg_text  = msg_data.get("text") or combined_text   # fallback to full conv
+            msg_phone = msg_data.get("phone") or (phones[0] if phones else None)
+            msg_li    = msg_data.get("linkedin") or (href_linkedin_urls[0] if href_linkedin_urls else "")
+
+            # ── Name ───────────────────────────────────────────────────────
             derived_name = _derive_name_from_email(local_part)
             full_name = derived_name or participant_name or ""
 
-            # Company — prefer domain-derived, fallback to inline text
+            # ── Company & job details ─────────────────────────────────────
             company_from_domain = _derive_company_from_domain(domain)
-            job_details = _extract_job_details(combined_text)
-            company = job_details["company_name"] or company_from_domain
+            job_details = _extract_job_details(msg_text)          # ← per-email text!
+            company     = job_details["company_name"] or company_from_domain
 
-            # Location
-            location_str = job_details["location"] or ""
+            # ── Location ─────────────────────────────────────────────────
+            location_str  = job_details["location"] or ""
             location_data = parse_location(location_str) if location_str else {
                 "city": None, "state": None, "country": None, "postal_code": None
             }
 
-            # Job title — from inline regex
+            # ── Job title ─────────────────────────────────────────────────
             job_title = job_details["job_title"] or ""
 
-            # Classification (NEW)
+            # ── LinkedIn & classification ──────────────────────────────────
+            linkedin_id    = msg_li
             classification = classify_contact(email, linkedin_id)
+
+
 
             contacts.append({
                 # Contact info
                 "full_name": full_name,
                 "email": email.lower(),
-                "phone": primary_phone,
+                "phone": msg_phone,
                 "company_name": company or "",
                 "job_title": job_title,
                 
@@ -1018,6 +1135,140 @@ class OfflineExtractor:
             })
 
         return contacts
+
+    # ------------------------------------------------------------------
+    # Per-message Job Listing Extraction
+    # ------------------------------------------------------------------
+
+    def _extract_job_listings_from_conversation(
+        self, conv: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Scan every INCOMING message individually and create one raw_job_listing
+        record for each message that contains a job opportunity.
+
+        Same recruiter, same thread, 4 different job messages:
+            Monday msg    → job listing A
+            Wednesday msg → job listing B
+            Thu AM msg    → job listing C
+            Thu PM msg    → job listing D
+        """
+        conv_id         = conv.get("conversation_id", "unknown")
+        participant_url = conv.get("participant_profile_url") or ""
+        messages        = conv.get("messages", [])
+        candidate_email = (conv.get("candidate_email") or "").lower().strip()
+
+        job_listings: List[Dict[str, Any]] = []
+        extraction_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for msg_idx, m in enumerate(messages):
+            msg_text = (
+                (m.get("text") or "") + "\n" + (m.get("card_text") or "")
+            ).strip()
+
+            if not msg_text:
+                continue
+
+            # ── Outgoing detection: DOM flag first, email heuristic as fallback ─
+            msg_email_links = [e.lower() for e in m.get("email_links", []) if e]
+            if "is_outgoing" in m:
+                if m["is_outgoing"]:
+                    continue  # scraper confirmed this is the candidate's message
+            else:
+                # Legacy fallback for JSON files scraped before the DOM flag was added
+                non_candidate_emails = [e for e in msg_email_links if e != candidate_email]
+                all_text_raw = [
+                    e.lower() for e in re.findall(
+                        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", msg_text
+                    ) if e
+                ]
+                non_candidate_in_text = [e for e in all_text_raw if e != candidate_email]
+                candidate_in_text = bool(candidate_email and candidate_email in msg_text.lower())
+                if (bool(msg_email_links and not non_candidate_emails) or
+                        bool(candidate_in_text and not non_candidate_in_text and not non_candidate_emails)):
+                    continue  # skip outgoing
+
+            non_candidate_emails = [e for e in msg_email_links if e != candidate_email]
+
+            # ── Only process messages that contain job opportunity content ─
+            if not _is_job_message(msg_text):
+                continue
+
+            # ── Extract from THIS message only ────────────────────────────
+            job_details       = _extract_job_details(msg_text)
+            msg_phones        = self._extract_phones(msg_text)
+            msg_linkedin_urls = [u for u in m.get("linkedin_links", []) if u]
+
+            recruiter_email    = next(iter(non_candidate_emails), "")
+            recruiter_phone    = msg_phones[0] if msg_phones else ""
+            recruiter_linkedin = msg_linkedin_urls[0] if msg_linkedin_urls else participant_url
+
+            # Extract apply/job URLs from this message
+            apply_links: List[str] = []
+            for pattern in [_JOB_URL_RE1, _JOB_URL_RE2]:
+                for url in pattern.findall(msg_text):
+                    url = url.rstrip(".,);\"'")
+                    if url and url not in apply_links:
+                        apply_links.append(url)
+            card_text = m.get("card_text") or ""
+            if card_text:
+                for pattern in [_JOB_URL_RE1, _JOB_URL_RE2]:
+                    for url in pattern.findall(card_text):
+                        url = url.rstrip(".,);\"'")
+                        if url and url not in apply_links:
+                            apply_links.append(url)
+
+            # ── Unique uid: conv_id + full timestamp (preferred) or index (fallback) ──
+            # msg_timestamp = "Mon, Feb 3 8:44 AM" — stable across re-scrapes.
+            # Falls back to msg{index} for JSON files scraped before this change.
+            raw_msg_ts = m.get("msg_timestamp") or ""
+            if raw_msg_ts:
+                # Sanitise for use in a key: replace spaces/commas with underscores
+                ts_slug = re.sub(r"[^a-zA-Z0-9]+", "_", raw_msg_ts).strip("_")
+                source_uid = f"{conv_id}_{ts_slug}"
+            else:
+                source_uid = f"{conv_id}_msg{msg_idx}"
+
+            listing = {
+                "source":            "bot_linkedin_message_extraction",
+                "source_uid":        source_uid,
+                "extractor_version": "v2",
+                "raw_title":         job_details.get("job_title") or "",
+                "raw_company":       job_details.get("company_name") or "",
+                "raw_location":      job_details.get("location") or "",
+                "raw_zip":           "",
+                "raw_description":   msg_text[:3000],
+                "raw_contact_info":  f"{recruiter_email} {recruiter_phone}".strip() or None,
+                "raw_notes":         "",
+                "raw_payload": {
+                    "conversation_id":    conv_id,
+                    "msg_index":          msg_idx,
+                    "timestamp":          m.get("timestamp"),
+                    "message_text":       msg_text,
+                    "apply_links":        apply_links,
+                    "recruiter_email":    recruiter_email,
+                    "recruiter_phone":    recruiter_phone,
+                    "recruiter_linkedin": recruiter_linkedin,
+                    "extraction_date":    extraction_ts,
+                },
+            }
+
+            job_listings.append(listing)
+            logger.debug(
+                "[OFFLINE] conv %s msg[%d] → job listing: %r @ %r (apply_links=%d)",
+                conv_id, msg_idx,
+                job_details.get("job_title"),
+                job_details.get("company_name"),
+                len(apply_links),
+            )
+
+        if job_listings:
+            logger.info(
+                "[OFFLINE] conv %s → %d job listing(s) from %d message(s)",
+                conv_id, len(job_listings), len(messages),
+            )
+
+        return job_listings
 
     def _extract_emails(self, text: str) -> List[str]:
         """Return a list of business email addresses found in text."""

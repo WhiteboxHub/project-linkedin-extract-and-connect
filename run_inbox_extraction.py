@@ -279,20 +279,38 @@ def run_phase2(args: argparse.Namespace, date_str: str, username: Optional[str] 
         exclude_personal=not args.include_personal,
     )
 
-    contacts = extractor.run()
-    logger.info("[PHASE 2] Done — %d unique contact(s) extracted", len(contacts))
+    result = extractor.run()
+    # result is {"contacts": [...], "job_listings": [...]}
+    contacts     = result.get("contacts", []) if isinstance(result, dict) else (result or [])
+    job_listings = result.get("job_listings", []) if isinstance(result, dict) else []
+
+    logger.info(
+        "[PHASE 2] Done — %d unique contact(s), %d job listing(s) extracted",
+        len(contacts), len(job_listings),
+    )
 
     if contacts:
-        logger.info("[PHASE 2] Sample (first 3):")
+        logger.info("[PHASE 2] Sample contacts (first 3):")
         for c in contacts[:3]:
             logger.info(
                 "  %-30s  %-35s  %s",
                 c.get("full_name", ""),
                 c.get("email", ""),
-                c.get("company", ""),
+                c.get("company_name", ""),
             )
 
-    return contacts
+    if job_listings:
+        logger.info("[PHASE 2] Sample job listings (first 3):")
+        for jl in job_listings[:3]:
+            logger.info(
+                "  uid=%-40s  %r @ %r",
+                jl.get("source_uid", ""),
+                jl.get("raw_title", ""),
+                jl.get("raw_company", ""),
+            )
+
+    return result  # forward the full dict to the caller
+
 
 
 # ---------------------------------------------------------------------------
@@ -418,18 +436,35 @@ def main() -> None:
 
         # --- Phase 2: Extract ---
         if run_p2:
-            contacts = run_phase2(args, date_str, username=username)
+            result = run_phase2(args, date_str, username=username)
+            # run_phase2 now returns {"contacts": [...], "job_listings": [...]}
+            # Graceful fallback if still returns a plain list (e.g. old code path)
+            if isinstance(result, dict):
+                contacts     = result.get("contacts", [])
+                job_listings = result.get("job_listings", [])
+            else:
+                contacts     = result or []
+                job_listings = None   # triggers legacy 1-listing-per-contact path
+
             all_extracted_contacts.extend(contacts)
             
             # --- API Submission ---
             inserted_count = 0
-            if contacts:
+            if contacts or job_listings:
                 try:
-                    employee_id = account.get("employee_id", 0)
+                    employee_id  = account.get("employee_id", 0)
                     candidate_id = account.get("candidate_id", 0)
-                    persistence = PersistenceModule(employee_id, candidate_id)
-                    inserted_count = persistence.bulk_insert_contacts(contacts)
-                    logger.info("[API] Successfully inserted %d contacts for %s", inserted_count, username)
+                    persistence  = PersistenceModule(employee_id, candidate_id)
+                    inserted_count = persistence.bulk_insert_contacts(
+                        contacts,
+                        job_listings=job_listings,
+                    )
+                    logger.info(
+                        "[API] Inserted %d contacts, %d job listings for %s",
+                        inserted_count,
+                        len(job_listings) if job_listings else 0,
+                        username,
+                    )
                 except Exception as e:
                     logger.error("[API] Failed to insert contacts for %s: %s", username, e)
                     if acc_result:
@@ -449,6 +484,7 @@ def main() -> None:
                     runtime_seconds=0.0,
                     errors=[]
                 )
+
 
         if acc_result:
             run_summary.add_account(acc_result)

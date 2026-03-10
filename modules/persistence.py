@@ -224,11 +224,18 @@ class PersistenceModule:
         self.candidate_id = candidate_id
         logger.info(f"PersistenceModule initialized (employee={employee_id}, candidate={candidate_id})")
 
-    def bulk_insert_contacts(self, contacts: List[Dict[str, Any]]) -> int:
+    def bulk_insert_contacts(
+        self,
+        contacts: List[Dict[str, Any]],
+        job_listings: Optional[List[Dict[str, Any]]] = None,
+    ) -> int:
         """
         Bulk insert contacts into database.
         Args:
-            contacts: List of contact dictionaries
+            contacts:     List of contact dictionaries.
+            job_listings: Optional explicit per-message job listing records.
+                          When provided, these replace the contact-derived positions.
+                          When None, falls back to generating one listing per contact.
         Returns:
             Number of contacts inserted
         Raises:
@@ -259,30 +266,41 @@ class PersistenceModule:
             logger.info(f"Calling API bulk insert for {len(valid_contacts)} valid contacts...")
             result = bulk_insert_automation_contacts(valid_contacts)
             
-            # Map to RawJobListing positions — submit for ANY contact that has a job title or company
-            raw_positions = []
-            for contact in valid_contacts:
-                job_title   = contact.get("job_title", "") or ""
-                company     = contact.get("company_name", "") or contact.get("company", "") or ""
+            # Build raw_job_listings records
+            if job_listings is not None:
+                # NEW: use the explicit per-message job listings
+                raw_positions = []
+                for jl in job_listings:
+                    entry = dict(jl)  # copy
+                    entry.setdefault("candidate_id", self.candidate_id)
+                    raw_positions.append(entry)
+                logger.info(
+                    f"Using {len(raw_positions)} explicit per-message job listing(s)."
+                )
+            else:
+                # LEGACY: derive one listing per contact (old behaviour)
+                raw_positions = []
+                for contact in valid_contacts:
+                    job_title = contact.get("job_title", "") or ""
+                    company   = contact.get("company_name", "") or contact.get("company", "") or ""
 
-                # Only create a raw position if we actually know the title or company
-                if not job_title and not company:
-                    continue
+                    if not job_title and not company:
+                        continue
 
-                raw_positions.append({
-                    "candidate_id":     contact.get("candidate_id", self.candidate_id),
-                    "source":           "bot_linkedin_message_extraction",
-                    "source_uid":       str(contact.get("conversation_id", "") or ""),
-                    "extractor_version": "v2",
-                    "raw_title":        job_title,
-                    "raw_company":      company,
-                    "raw_location":     contact.get("location") or contact.get("city", "") or "",
-                    "raw_zip":          "",
-                    "raw_description":  "",
-                    "raw_contact_info": f"{contact.get('email', '')} {contact.get('phone', '')}".strip() or None,
-                    "raw_notes":        "",
-                    "raw_payload":      contact.get("raw_payload"),
-                })
+                    raw_positions.append({
+                        "candidate_id":      contact.get("candidate_id", self.candidate_id),
+                        "source":            "bot_linkedin_message_extraction",
+                        "source_uid":        str(contact.get("conversation_id", "") or ""),
+                        "extractor_version": "v2",
+                        "raw_title":         job_title,
+                        "raw_company":       company,
+                        "raw_location":      contact.get("location") or contact.get("city", "") or "",
+                        "raw_zip":           "",
+                        "raw_description":   "",
+                        "raw_contact_info":  f"{contact.get('email', '')} {contact.get('phone', '')}".strip() or None,
+                        "raw_notes":         "",
+                        "raw_payload":       contact.get("raw_payload"),
+                    })
             
             # Only insert job listings if we have any
             raw_result = {"inserted": 0, "skipped": 0}

@@ -554,27 +554,60 @@ class InboxScraper:
         """
         Extract every message bubble from the currently open thread.
 
-        Returns a list of message dicts:
+        Iterates ALL <li> elements in the message list so we can:
+          1. Track date-heading <li>s (e.g. "Today", "Mon, Feb 3") to build a
+             full "date + time" timestamp for each message.
+          2. Classify each message event as incoming/outgoing via its DOM structure.
+
+        Each returned message dict contains:
         {
-            "sender_name": str | None,
+            "sender_name":        str | None,
             "sender_profile_url": str | None,
-            "text": str,
-            "timestamp": str | None,
+            "is_outgoing":        bool,
+            "date_heading":       str,          # e.g. "Mon, Feb 3" (LinkedIn date divider)
+            "timestamp":          str | None,   # time from DOM, e.g. "8:44 AM"
+            "msg_timestamp":      str | None,   # full "Mon, Feb 3 8:44 AM" (date + time)
+            "text":               str,
+            "card_text":          str,
+            "email_links":        list[str],
+            "linkedin_links":     list[str],
         }
         """
         messages: List[Dict[str, Any]] = []
+        current_date: str = ""          # most recently seen date-heading text
 
         try:
-            event_els = self.driver.find_elements(By.CSS_SELECTOR, SEL["msg_event"])
+            # Get ALL <li> children of the message list — not just event items.
+            # We need the date-divider lis too.
+            all_lis = self.driver.find_elements(
+                By.CSS_SELECTOR,
+                "ul.msg-s-message-list-content > li"
+            )
         except Exception as exc:
-            logger.warning("[EXTRACT] Could not find message events: %s", exc)
+            logger.warning("[EXTRACT] Could not find message list items: %s", exc)
             return messages
 
-        for event in event_els:
+        for li in all_lis:
             try:
-                msg = self._parse_message_event(event)
+                li_class = li.get_attribute("class") or ""
+
+                # ── Date heading li ──────────────────────────────────────
+                # These have time.msg-s-message-list__time-heading inside them.
+                date_els = li.find_elements(By.CSS_SELECTOR, SEL["msg_date_heading"])
+                if date_els:
+                    current_date = date_els[0].text.strip()
+                    logger.debug("[EXTRACT] Date heading: %r", current_date)
+                    continue
+
+                # ── Skip non-event lis (loaders, typing indicators, etc.) ──
+                if "msg-s-message-list__event" not in li_class:
+                    continue
+
+                # ── Parse the message event with date context ─────────────
+                msg = self._parse_message_event(li, current_date=current_date)
                 if msg:
                     messages.append(msg)
+
             except StaleElementReferenceException:
                 logger.debug("[EXTRACT] Stale element in message list — skipping item")
             except Exception as exc:
@@ -583,13 +616,12 @@ class InboxScraper:
         logger.debug("[EXTRACT] Extracted %d message(s)", len(messages))
         return messages
 
-    def _parse_message_event(self, event) -> Optional[Dict[str, Any]]:
+    def _parse_message_event(self, event, current_date: str = "") -> Optional[Dict[str, Any]]:
         """
         Parse a single <li class='msg-s-message-list__event'> element.
 
-        LinkedIn renders message groups (multiple messages from the same sender
-        in a row) as a single event block. We capture the group's sender details
-        and each individual message text + timestamp.
+        current_date: the date string from the most recent date-heading <li>
+                      e.g. "Today", "Mon, Feb 3". Used to build a full timestamp.
         """
         # --- sender name ---
         sender_name: Optional[str] = None
@@ -610,14 +642,24 @@ class InboxScraper:
         except NoSuchElementException:
             pass
 
-        # --- timestamp (group-level) ---
+        # --- timestamp ---
+        # For INCOMING messages the timestamp lives INSIDE div.msg-s-message-group__meta.
+        # For OUTGOING messages it lives directly inside the event li (no meta div).
+        # We pick it up with the existing broad selector — it finds both positions —
+        # then combine it with current_date to get a full sortable timestamp.
         timestamp: Optional[str] = None
         try:
-            timestamp = event.find_element(
-                By.CSS_SELECTOR, SEL["msg_timestamp"]
-            ).text.strip() or None
+            ts_el = event.find_element(By.CSS_SELECTOR, SEL["msg_timestamp"])
+            timestamp = ts_el.text.strip() or None
         except NoSuchElementException:
             pass
+
+        # Full timestamp = "<date_heading> <time>" e.g. "Mon, Feb 3 8:44 AM"
+        msg_timestamp: Optional[str] = None
+        if timestamp:
+            msg_timestamp = f"{current_date} {timestamp}".strip() if current_date else timestamp
+        elif current_date:
+            msg_timestamp = current_date  # date only fallback
 
         # --- message body (real text only — NOT the LinkedIn card preview) ---
         body_text: Optional[str] = None
@@ -700,18 +742,34 @@ class InboxScraper:
         except Exception:
             pass
 
+        # --- is_outgoing: DOM-level detection (most reliable signal) ---
+        # LinkedIn renders `div.msg-s-message-group__meta` ONLY for INCOMING
+        # messages (other person's) — it contains the sender name + profile link.
+        # Your own (outgoing) messages never have this block.
+        # So: meta present → recruiter message; meta absent → your message.
+        is_outgoing: bool = True   # assume outgoing until we find the meta block
+        try:
+            meta_els = event.find_elements(By.CSS_SELECTOR, SEL["msg_meta"])
+            if meta_els:
+                is_outgoing = False  # sender meta found → this is an incoming message
+        except Exception:
+            pass
+
         # Skip events that have neither real text nor card text nor links
         if not body_text and not card_text and not email_links and not linkedin_links:
             return None
 
         return {
-            "sender_name": sender_name,
+            "sender_name":        sender_name,
             "sender_profile_url": sender_url,
-            "text": body_text or "",
-            "card_text": card_text or "",
-            "email_links": email_links,       # direct emails from href
-            "linkedin_links": linkedin_links,  # direct LinkedIn URLs from href
-            "timestamp": timestamp,
+            "is_outgoing":        is_outgoing,     # True = candidate sent this
+            "date_heading":       current_date,    # e.g. "Mon, Feb 3" (from date divider)
+            "timestamp":          timestamp,        # raw time, e.g. "8:44 AM"
+            "msg_timestamp":      msg_timestamp,    # full "Mon, Feb 3 8:44 AM" (unique per msg)
+            "text":               body_text or "",
+            "card_text":          card_text or "",
+            "email_links":        email_links,
+            "linkedin_links":     linkedin_links,
         }
 
     # ------------------------------------------------------------------
