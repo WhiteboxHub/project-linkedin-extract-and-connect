@@ -381,6 +381,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Skip sending the SMTP email report after the run",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Run scraping and extraction locally, but SKIP saving to the database/API",
+    )
     return parser.parse_args()
 
 
@@ -451,24 +457,32 @@ def main() -> None:
             # --- API Submission ---
             inserted_count = 0
             if contacts or job_listings:
-                try:
-                    employee_id  = account.get("employee_id", 0)
-                    candidate_id = account.get("candidate_id", 0)
-                    persistence  = PersistenceModule(employee_id, candidate_id)
-                    inserted_count = persistence.bulk_insert_contacts(
-                        contacts,
-                        job_listings=job_listings,
-                    )
+                if args.dry_run:
                     logger.info(
-                        "[API] Inserted %d contacts, %d job listings for %s",
-                        inserted_count,
+                        "[DRY RUN] Would have inserted %d contacts, %d job listings for %s. Database skipped.",
+                        len(contacts),
                         len(job_listings) if job_listings else 0,
                         username,
                     )
-                except Exception as e:
-                    logger.error("[API] Failed to insert contacts for %s: %s", username, e)
-                    if acc_result:
-                        acc_result.errors.append(f"API Insert failed: {e}")
+                else:
+                    try:
+                        employee_id  = account.get("employee_id", 0)
+                        candidate_id = account.get("candidate_id", 0)
+                        persistence  = PersistenceModule(employee_id, candidate_id)
+                        inserted_count = persistence.bulk_insert_contacts(
+                            contacts,
+                            job_listings=job_listings,
+                        )
+                        logger.info(
+                            "[API] Inserted %d contacts, %d job listings for %s",
+                            inserted_count,
+                            len(job_listings) if job_listings else 0,
+                            username,
+                        )
+                    except Exception as e:
+                        logger.error("[API] Failed to insert contacts for %s: %s", username, e)
+                        if acc_result:
+                            acc_result.errors.append(f"API Insert failed: {e}")
 
             if acc_result:
                 acc_result.contacts_found = len(contacts)
