@@ -577,36 +577,30 @@ class InboxScraper:
         current_date: str = ""          # most recently seen date-heading text
 
         try:
-            # Get ALL <li> children of the message list — not just event items.
-            # We need the date-divider lis too.
-            all_lis = self.driver.find_elements(
-                By.CSS_SELECTOR,
-                "ul.msg-s-message-list-content > li"
-            )
+            # By asking for both the event `li`s AND the time-heading `time` elements,
+            # querySelectorAll returns them exactly in document order.
+            # This completely bypasses the brittle `ul` parent class wrapper.
+            selector = f"{SEL['msg_event']}, {SEL['msg_date_heading']}"
+            all_els = self.driver.find_elements(By.CSS_SELECTOR, selector)
         except Exception as exc:
-            logger.warning("[EXTRACT] Could not find message list items: %s", exc)
+            logger.warning("[EXTRACT] Could not find message elements: %s", exc)
             return messages
 
-        for li in all_lis:
+        for el in all_els:
             try:
-                li_class = li.get_attribute("class") or ""
+                tag = el.tag_name.lower()
 
-                # ── Date heading li ──────────────────────────────────────
-                # These have time.msg-s-message-list__time-heading inside them.
-                date_els = li.find_elements(By.CSS_SELECTOR, SEL["msg_date_heading"])
-                if date_els:
-                    current_date = date_els[0].text.strip()
+                # ── Date heading ─────────────────────────────────────────
+                if tag == "time":
+                    current_date = el.text.strip()
                     logger.debug("[EXTRACT] Date heading: %r", current_date)
                     continue
 
-                # ── Skip non-event lis (loaders, typing indicators, etc.) ──
-                if "msg-s-message-list__event" not in li_class:
-                    continue
-
-                # ── Parse the message event with date context ─────────────
-                msg = self._parse_message_event(li, current_date=current_date)
-                if msg:
-                    messages.append(msg)
+                # ── Message event ─────────────────────────────────────────
+                if tag == "li":
+                    msg = self._parse_message_event(el, current_date=current_date)
+                    if msg:
+                        messages.append(msg)
 
             except StaleElementReferenceException:
                 logger.debug("[EXTRACT] Stale element in message list — skipping item")
