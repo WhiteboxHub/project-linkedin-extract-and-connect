@@ -1069,10 +1069,16 @@ class OfflineExtractor:
             # ── Per-email message context ──────────────────────────────────
             # Use the specific message that contained this email so job details
             # (title/company/location) match THIS recruiter's message only.
-            msg_data  = email_to_msg_data.get(email, {})
-            msg_text  = msg_data.get("text") or combined_text   # fallback to full conv
-            msg_phone = msg_data.get("phone") or (phones[0] if phones else None)
-            msg_li    = msg_data.get("linkedin") or (href_linkedin_urls[0] if href_linkedin_urls else "")
+            msg_data = email_to_msg_data.get(email)
+            if msg_data is not None:
+                msg_text  = msg_data.get("text", "")
+                msg_phone = msg_data.get("phone") or (phones[0] if phones else None)
+                msg_li    = msg_data.get("linkedin") or ""
+            else:
+                # Fallback for emails discovered purely via regex across combined text
+                msg_text  = combined_text
+                msg_phone = phones[0] if phones else None
+                msg_li    = href_linkedin_urls[0] if href_linkedin_urls else ""
 
             # ── Name ───────────────────────────────────────────────────────
             derived_name = _derive_name_from_email(local_part)
