@@ -313,8 +313,8 @@ class PersistenceModule:
                 duplicates = result.get('duplicates', 0)
                 failed = result.get('failed', 0)
                 
-                logger.info(f"✅ Contact Insert Results: Inserted={inserted_count}, Duplicates={duplicates}, Failed={failed}")
-                logger.info(f"✅ Position Insert Results: Inserted={raw_result.get('inserted', 0)}, Skipped={raw_result.get('skipped', 0)}")
+                logger.info(f"[SUCCESS] Contact Insert Results: Inserted={inserted_count}, Duplicates={duplicates}, Failed={failed}")
+                logger.info(f"[SUCCESS] Position Insert Results: Inserted={raw_result.get('inserted', 0)}, Skipped={raw_result.get('skipped', 0)}")
                 
                 # Log activity with actual inserted count
                 self.log_activity(
