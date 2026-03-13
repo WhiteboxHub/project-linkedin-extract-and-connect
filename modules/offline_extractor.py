@@ -1244,7 +1244,7 @@ class OfflineExtractor:
                 "raw_location":      job_details.get("location") or "",
                 "raw_zip":           "",
                 "raw_description":   msg_text[:3000],
-                "raw_contact_info":  f"{recruiter_email} {recruiter_phone}".strip() or None,
+                "raw_contact_info":  f"Email: {recruiter_email or ''}, Phone: {recruiter_phone or ''}",
                 "raw_notes":         "",
                 "raw_payload": {
                     "conversation_id":    conv_id,

@@ -297,7 +297,7 @@ class PersistenceModule:
                         "raw_location":      contact.get("location") or contact.get("city", "") or "",
                         "raw_zip":           "",
                         "raw_description":   "",
-                        "raw_contact_info":  f"{contact.get('email', '')} {contact.get('phone', '')}".strip() or None,
+                        "raw_contact_info":  f"Email: {contact.get('email', '')}, Phone: {contact.get('phone', '')}",
                         "raw_notes":         "",
                         "raw_payload":       contact.get("raw_payload"),
                     })
