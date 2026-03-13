@@ -1210,7 +1210,7 @@ class OfflineExtractor:
             recruiter_linkedin = msg_linkedin_urls[0] if msg_linkedin_urls else participant_url
 
             # Extract apply/job URLs from this message
-            apply_links: List[str] = []
+            apply_links: List[str] = m.get("external_links", [])[:]
             for pattern in [_JOB_URL_RE1, _JOB_URL_RE2]:
                 for url in pattern.findall(msg_text):
                     url = url.rstrip(".,);\"'")

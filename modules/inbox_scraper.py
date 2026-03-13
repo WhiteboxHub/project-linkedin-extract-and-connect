@@ -723,6 +723,7 @@ class InboxScraper:
         # are the raw values, unaffected by display text formatting.
         email_links: list = []
         linkedin_links: list = []
+        external_links: list = []
         try:
             for a in event.find_elements(By.CSS_SELECTOR, "p.msg-s-event-listitem__body a[href]"):
                 href = (a.get_attribute("href") or "").strip()
@@ -734,6 +735,10 @@ class InboxScraper:
                     clean = href.split("?")[0].rstrip("/")
                     if clean and clean not in linkedin_links:
                         linkedin_links.append(clean)
+                elif href.startswith("http"):
+                    # Capture external links (e.g. jobs.cloudnativetech.com, greenhouse.io, etc)
+                    if href not in external_links:
+                        external_links.append(href)
         except Exception:
             pass
 
@@ -751,7 +756,7 @@ class InboxScraper:
             pass
 
         # Skip events that have neither real text nor card text nor links
-        if not body_text and not card_text and not email_links and not linkedin_links:
+        if not body_text and not card_text and not email_links and not linkedin_links and not external_links:
             return None
 
         return {
@@ -765,6 +770,7 @@ class InboxScraper:
             "card_text":          card_text or "",
             "email_links":        email_links,
             "linkedin_links":     linkedin_links,
+            "external_links":     external_links,
         }
 
     # ------------------------------------------------------------------
