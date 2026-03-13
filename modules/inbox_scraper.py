@@ -68,7 +68,8 @@ SEL = {
     # =========================
     "msg_list":        "ul.msg-s-message-list-content",
     "msg_list_wrapper":"div.msg-s-message-list.full-width.scrollable",
-    "msg_event":       "li.msg-s-message-list__event",
+    # Specific targeted message selector, backed up by the old broad <ul> > <li> rule per request
+    "msg_event":       "li.msg-s-message-list__event, ul.msg-s-message-list-content > li",
     "msg_group":       ".msg-s-message-group, .msg-s-message-group__content-container",
     "msg_top_of_list": "li.msg-s-message-list__top-of-list",
     "msg_loader":      "li.msg-s-message-list__loader",
