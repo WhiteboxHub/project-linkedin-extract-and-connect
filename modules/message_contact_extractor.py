@@ -495,6 +495,47 @@ _PERSONAL_DOMAINS = {
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"}
 
 # ---------------------------------------------------------------------------
+# Name Extraction Fallback
+# ---------------------------------------------------------------------------
+
+_GENERIC_EMAIL_PREFIXES = {
+    "info", "contact", "admin", "recruiter", "hr", "careers", 
+    "support", "sales", "hello", "team", "marketing", "jobs",
+    "noreply", "no-reply", "recruitment", "talent", "staff"
+}
+
+def _extract_name_from_email(email: Optional[str]) -> Optional[str]:
+    """
+    Attempt to extract a human name from an email prefix.
+    Rejects generic prefixes like 'hr' or 'recruiter'.
+    Handles dot or underscore separation (e.g. 'john.doe' -> 'John Doe').
+    """
+    if not email or "@" not in email:
+        return None
+        
+    prefix = email.split("@")[0].lower()
+    
+    # Strip trailing numbers (e.g. 'johndoe123' -> 'johndoe')
+    prefix = re.sub(r'\d+$', '', prefix)
+    
+    if prefix in _GENERIC_EMAIL_PREFIXES:
+        return None
+        
+    # Handle explicit separators
+    if "." in prefix:
+        parts = prefix.split(".")
+        return " ".join(p.capitalize() for p in parts if p)
+    elif "_" in prefix:
+        parts = prefix.split("_")
+        return " ".join(p.capitalize() for p in parts if p)
+        
+    # If it's a single word (e.g. 'dave'), just capitalize it
+    if len(prefix) >= 2:
+        return prefix.capitalize()
+    
+    return None
+
+# ---------------------------------------------------------------------------
 # Location Parsing
 # ---------------------------------------------------------------------------
 
@@ -914,10 +955,18 @@ class MessageContactExtractor:
         job_details = extract_job_details(combined_text)
         is_job = is_job_message(combined_text)
 
+        # Try to infer a missing name from the email address
+        final_name = contact.get("sender_name")
+        email_val = contact.get("email")
+        if not final_name and email_val:
+            final_name = _extract_name_from_email(email_val)
+            if final_name:
+                logger.debug(f"[MCE] inferred missing name '{final_name}' from email '{email_val}'")
+
         # Build final contact dict matching table schema
         contact_final = {
             # Contact info
-            "full_name": contact.get("sender_name"),
+            "full_name": final_name,
             "email": contact.get("email"),
             "phone": contact.get("phone"),
             "company_name": contact.get("company"),
