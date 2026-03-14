@@ -46,6 +46,8 @@ SEL = {
     "conv_timestamp":  ".msg-conversation-listitem__time-stamp",
     # Sidebar snippet (last message preview)
     "conv_snippet":    "p.msg-conversation-card__message-snippet",
+    # Specific pill for Sponsored/Ad conversations
+    "conv_sponsored_pill": ".msg-conversation-card__pill",
 
     # =========================
     # ACTIVE THREAD HEADER
@@ -243,6 +245,11 @@ class InboxScraper:
         for idx, item in enumerate(conversations, start=1):
             conv_id = "unknown"
             try:
+                # Skip Sponsored/Ad conversations
+                if item.find_elements(By.CSS_SELECTOR, SEL["conv_sponsored_pill"]):
+                    logger.info("[INBOX] (%d/%d) Skipping sponsored conversation (Ad)", idx, len(conversations))
+                    continue
+
                 conv_id = self._get_conversation_id(item)
                 logger.info("[INBOX] (%d/%d) Opening conversation: %s", idx, len(conversations), conv_id)
 
